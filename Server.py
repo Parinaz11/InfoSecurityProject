@@ -9,7 +9,7 @@ from Crypto.Cipher import PKCS1_OAEP
 PORT = 12345
 HOST = 'localhost'
 p2p_port = 12346
-num_ports = 1
+num_ports = 0
 
 class User:
     def __init__(self, email, username, password_hash, salt, public_key, private_key, address=None, p2p_port=None):
@@ -139,7 +139,11 @@ class ClientHandler(threading.Thread):
         recipient_user = self.user_manager.find_user_by_username(recipient_username)
         if recipient_user:
             self.send_message("P2P_INFO")
+            print("SEND P2P")
             self.send_message(f"{recipient_user.address}:{recipient_user.p2p_port}")
+            # Send the public key for that recipient
+            print("HEREE")
+            self.send_message(f"PEERPK{recipient_user.public_key}")
         else:
             self.send_message("User does not exist.")
 

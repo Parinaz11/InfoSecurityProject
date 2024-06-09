@@ -1,12 +1,15 @@
 import socket
 import threading
-import base64
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP
+from Crypto.Signature import pkcs1_15
+from Crypto.Hash import SHA256
+import base64
 
 HOST = 'localhost'
 PORT = 12345
-P2P_PORT = 12346
+P2P_PORT = 12346 # not used
+server_connection = True
 
 
 class Client:
@@ -14,10 +17,17 @@ class Client:
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.connect((HOST, PORT))
         self.username = None
+        # Keys
+        self.key = RSA.generate(2048)
+        self.public_key = self.key.publickey().export_key()
+        self.peer_public_key = None
 
     def run(self):
+        global server_connection
         try:
             while True:
+
+                server_connection = True
                 print("1. Register")
                 print("2. Login")
                 print("3. Exit")
@@ -41,10 +51,15 @@ class Client:
             print("Client exception:", str(e))
 
     def send_message(self, message):
+        # Sign the message with private key
         self.socket.sendall(message.encode())
 
     def receive_message(self):
-        return self.socket.recv(1024).decode()
+        data = self.socket.recv(1024).decode()
+        if data.startswith("PEERPK"):
+            self.peer_public_key = data[6:]
+            print("Received peer's public key.")
+        return data
 
     def register_user(self):
         self.send_message("register")
@@ -70,13 +85,15 @@ class Client:
         self.send_message(password)
         # Get the p2p port number which is unique
         P2P_PORT = int(self.receive_message())
-        p2p_thread = threading.Thread(target=start_p2p_server, daemon=True)
+        p2p_thread = threading.Thread(target=self.start_p2p_server, daemon=True)
         p2p_thread.start()
         # self.send_message(str(P2P_PORT))
 
         print(self.receive_message())
 
     def private_chat(self):
+        global server_connection
+
         self.send_message("privateChat")
         recipient_username = input("Enter recipient username: ")
         self.send_message(recipient_username)
@@ -84,7 +101,10 @@ class Client:
         p2p_info_confirm = self.receive_message()
         if p2p_info_confirm.startswith("P2P_INFO"):
             p2p_info = self.receive_message()
-            print('P2PPPP info', p2p_info)
+            # Getting the public key of the other client
+            self.peer_public_key = self.receive_message()
+            server_connection = False
+            print('P2P info', p2p_info)
             address, port = p2p_info.split(":")
             self.p2p_chat(address, int(port))
         else:
@@ -97,31 +117,80 @@ class Client:
         print("Start typing your messages (type 'exit' to end chat):")
         while True:
             message = input()
+
+            if self.peer_public_key is not None:
+                recipient_key = RSA.import_key(self.peer_public_key)
+                cipher_rsa = PKCS1_OAEP.new(recipient_key)
+                encrypted_message = cipher_rsa.encrypt(message.encode())
+
+                # Sign the message
+                h = SHA256.new(message.encode())
+                signature = pkcs1_15.new(self.key).sign(h)
+
+                # Combine username, encrypted message and signature
+                final_message = f"{self.username}:{base64.b64encode(encrypted_message).decode()}:{base64.b64encode(signature).decode()}"
+                self.socket.sendall(final_message.encode())
+
+            else:
+                print("Public key of the recipient is not available.")
+
             if message == "exit":
                 break
-            recipient_socket.sendall(message.encode())
+            # recipient_socket.sendall(message.encode())
+
         recipient_socket.close()
 
 
-def start_p2p_server():
-    p2p_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    p2p_socket.bind((HOST, P2P_PORT))
-    p2p_socket.listen(1)
-    print(f"P2P server listening on port {P2P_PORT}")
+    def start_p2p_server(self):
+        p2p_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        p2p_socket.bind((HOST, P2P_PORT))
+        p2p_socket.listen(1)
+        print(f"P2P server listening on port {P2P_PORT}")
 
-    while True:
-        conn, addr = p2p_socket.accept()
-        print(f"Connected to {addr}")
-        threading.Thread(target=handle_p2p_client, args=(conn,)).start()
-
-
-def handle_p2p_client(conn):
-    with conn:
         while True:
-            data = conn.recv(1024)
-            if not data:
-                break
-            print("Received message:", data.decode())
+            conn, addr = p2p_socket.accept()
+            print(f"Connected to {addr}")
+            threading.Thread(target=self.handle_p2p_client, args=(conn,)).start()
+
+
+    def handle_p2p_client(self, conn):
+        with conn:
+            while True:
+                message = "Not received"
+                data = conn.recv(1024) #self.socket.recv(4096)
+                if data:
+                    print("ENTERED")
+                    # if not server_connection:
+                    # Process the received message
+                    username, encrypted_message, signature = data.decode().split(":")
+                    encrypted_message = base64.b64decode(encrypted_message)
+                    signature = base64.b64decode(signature)
+
+                    # Decrypt the message
+                    cipher_rsa = PKCS1_OAEP.new(self.key)
+                    message = cipher_rsa.decrypt(encrypted_message).decode()
+
+                    # Verify the signature
+                    h = SHA256.new(message.encode())
+                    try:
+                        pkcs1_15.new(RSA.import_key(self.peer_public_key)).verify(h, signature)
+                        message = f"Received verified message from {username}: {message}"
+                        return message
+                    except (ValueError, TypeError):
+                        message = "The signature is not valid."
+
+
+                if not data:
+                    break
+
+                print(message)
+
+
+
+                # data = conn.recv(1024)
+                # if not data:
+                #     break
+                # print("Received message:", data.decode())
 
 
 def main():
