@@ -19,15 +19,15 @@ class Client:
         self.username = None
         # Keys
         self.key = RSA.generate(2048)
-        self.public_key = self.key.publickey().export_key()
+        self.public_key = self.key.publickey().export_key().decode('utf-8')
         self.peer_public_key = None
 
     def run(self):
-        global server_connection
+        # global server_connection
         try:
             while True:
 
-                server_connection = True
+                # server_connection = True
                 print("1. Register")
                 print("2. Login")
                 print("3. Exit")
@@ -56,9 +56,10 @@ class Client:
 
     def receive_message(self):
         data = self.socket.recv(1024).decode()
-        if data.startswith("PEERPK"):
-            self.peer_public_key = data[6:]
-            print("Received peer's public key.")
+        # if data.startswith("PEERPK"):
+        #     self.peer_public_key = data[6:].encode('utf-8')
+        #     dfdjfkdfjdf
+        #     print("Received peer's public key.")
         return data
 
     def register_user(self):
@@ -102,7 +103,13 @@ class Client:
         if p2p_info_confirm.startswith("P2P_INFO"):
             p2p_info = self.receive_message()
             # Getting the public key of the other client
-            self.peer_public_key = self.receive_message()
+            received_public_key_pem = self.receive_message()[6:].strip()
+            try:
+                self.peer_public_key = received_public_key_pem.encode('utf-8')
+            except Exception as e:
+                print("Failed to import peer's public key:", str(e))
+                return
+
             server_connection = False
             print('P2P info', p2p_info)
             address, port = p2p_info.split(":")
@@ -138,6 +145,7 @@ class Client:
                 break
             # recipient_socket.sendall(message.encode())
 
+        print("Ended conversation")
         recipient_socket.close()
 
 
@@ -156,8 +164,13 @@ class Client:
     def handle_p2p_client(self, conn):
         with conn:
             while True:
+
                 message = "Not received"
-                data = conn.recv(1024) #self.socket.recv(4096)
+                data = conn.recv(1024) # self.socket.recv(4096)
+
+                if not data:
+                    break
+
                 if data:
                     print("ENTERED")
                     # if not server_connection:
@@ -175,17 +188,10 @@ class Client:
                     try:
                         pkcs1_15.new(RSA.import_key(self.peer_public_key)).verify(h, signature)
                         message = f"Received verified message from {username}: {message}"
-                        return message
                     except (ValueError, TypeError):
                         message = "The signature is not valid."
 
-
-                if not data:
-                    break
-
                 print(message)
-
-
 
                 # data = conn.recv(1024)
                 # if not data:
