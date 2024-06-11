@@ -138,11 +138,14 @@ class ClientHandler(threading.Thread):
     def handle_private_chat_request(self):
         recipient_username = self.receive_message()
         recipient_user = self.user_manager.find_user_by_username(recipient_username)
+        print("Found", recipient_user)
         if recipient_user:
+            print("Sending info")
             self.send_message("P2P_INFO")
             self.send_message(f"{recipient_user.address}:{recipient_user.p2p_port}")
             # Send the public key for that recipient
             self.send_message(f"PEERPK{recipient_user.public_key.decode('utf-8')}")
+            print("Finished sending pubic key")
         else:
             self.send_message("User does not exist.")
 

@@ -8,7 +8,7 @@ import base64
 
 HOST = 'localhost'
 PORT = 12345
-P2P_PORT = 12346 # not used
+# P2P_PORT = 12346 # not used
 server_connection = True
 
 
@@ -19,7 +19,7 @@ class Client:
         self.username = None
         # Keys
         self.key = RSA.generate(2048)
-        self.public_key = self.key.publickey().export_key().decode('utf-8')
+        self.public_key = self.key.publickey().export_key() # .decode('utf-8')
         self.peer_public_key = None
 
     def run(self):
@@ -77,23 +77,20 @@ class Client:
 
     def login_user(self):
 
-        global P2P_PORT
-
         self.send_message("login")
         self.username = input("Enter your username: ")
         self.send_message(self.username)
         password = input("Enter your password: ")
         self.send_message(password)
         # Get the p2p port number which is unique
-        P2P_PORT = int(self.receive_message())
-        p2p_thread = threading.Thread(target=self.start_p2p_server, daemon=True)
+        user_port = int(self.receive_message())
+        p2p_thread = threading.Thread(target=self.start_p2p_server, args=(user_port,), daemon=True)
         p2p_thread.start()
         # self.send_message(str(P2P_PORT))
 
         print(self.receive_message())
 
     def private_chat(self):
-        global server_connection
 
         self.send_message("privateChat")
         recipient_username = input("Enter recipient username: ")
@@ -110,7 +107,6 @@ class Client:
                 print("Failed to import peer's public key:", str(e))
                 return
 
-            server_connection = False
             print('P2P info', p2p_info)
             address, port = p2p_info.split(":")
             self.p2p_chat(address, int(port))
@@ -128,15 +124,15 @@ class Client:
             if self.peer_public_key is not None:
                 recipient_key = RSA.import_key(self.peer_public_key)
                 cipher_rsa = PKCS1_OAEP.new(recipient_key)
-                encrypted_message = cipher_rsa.encrypt(message.encode())
+                encrypted_message = cipher_rsa.encrypt(message.encode('utf-8'))
 
                 # Sign the message
-                h = SHA256.new(message.encode())
+                h = SHA256.new(message.encode('utf-8'))
                 signature = pkcs1_15.new(self.key).sign(h)
 
                 # Combine username, encrypted message and signature
                 final_message = f"{self.username}:{base64.b64encode(encrypted_message).decode()}:{base64.b64encode(signature).decode()}"
-                self.socket.sendall(final_message.encode())
+                recipient_socket.sendall(final_message.encode())
 
             else:
                 print("Public key of the recipient is not available.")
@@ -149,7 +145,7 @@ class Client:
         recipient_socket.close()
 
 
-    def start_p2p_server(self):
+    def start_p2p_server(self, P2P_PORT):
         p2p_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         p2p_socket.bind((HOST, P2P_PORT))
         p2p_socket.listen(1)
@@ -157,7 +153,8 @@ class Client:
 
         while True:
             conn, addr = p2p_socket.accept()
-            print(f"Connected to {addr}")
+            print(f"1Connected to {addr}")
+            print(f"Connection:{conn}")
             threading.Thread(target=self.handle_p2p_client, args=(conn,)).start()
 
 
@@ -176,12 +173,12 @@ class Client:
                     # if not server_connection:
                     # Process the received message
                     username, encrypted_message, signature = data.decode().split(":")
-                    encrypted_message = base64.b64decode(encrypted_message)
+                    encrypted_message = base64.b64decode(encrypted_message.encode('utf-8')) # ADDED ENCODE
                     signature = base64.b64decode(signature)
 
                     # Decrypt the message
                     cipher_rsa = PKCS1_OAEP.new(self.key)
-                    message = cipher_rsa.decrypt(encrypted_message).decode()
+                    message = cipher_rsa.decrypt(encrypted_message).decode('utf-8')
 
                     # Verify the signature
                     h = SHA256.new(message.encode())
