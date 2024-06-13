@@ -3,8 +3,11 @@ import threading
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP
 from Crypto.Signature import pkcs1_15
-from Crypto.Hash import SHA256
 import base64
+
+from Crypto.Cipher import AES
+from Crypto.Hash import HMAC, SHA256
+from Crypto.Random import get_random_bytes
 
 HOST = 'localhost'
 PORT = 12345
@@ -51,7 +54,9 @@ class Client:
 
     def receive_keys(self):
         private_key_pem = self.receive_message()
+        # print("RECEIVED PRIVATE KEY:", private_key_pem)
         public_key_pem = self.receive_message()
+        # print("RECEIVED PUBLIC KEY:", public_key_pem)
         private_key = private_key_pem.encode('utf-8')  # RSA.import_key(private_key_pem)
         public_key = public_key_pem.encode('utf-8')  # RSA.import_key(public_key_pem)
         return private_key, public_key
@@ -66,8 +71,10 @@ class Client:
         self.send_message(password)
         confirm_password = input("Confirm your password: ")
         self.send_message(confirm_password)
-
-        self.key, self.public_key = self.receive_keys()
+        try:
+            self.key, self.public_key = self.receive_keys()
+        except Exception as e:
+            print("Error for receiving private and public key:", str(e))
         print(self.receive_message())
 
     def login_user(self):
@@ -100,6 +107,7 @@ class Client:
             received_public_key_pem = self.receive_message()[6:].strip()
             try:
                 self.peer_public_key = RSA.import_key(received_public_key_pem)
+                print("Received peer public key.")
             except Exception as e:
                 print("Failed to import peer's public key:", str(e))
                 return
@@ -119,17 +127,39 @@ class Client:
             message = input()
             if message == "exit":
                 break
-
             if self.peer_public_key:
-                recipient_key = self.peer_public_key
-                cipher_rsa = PKCS1_OAEP.new(recipient_key)
-                encrypted_message = cipher_rsa.encrypt(message.encode('utf-8'))
+                try:
+                    recipient_key = self.peer_public_key
+                    cipher_rsa = PKCS1_OAEP.new(recipient_key)
+                    encrypted_message = cipher_rsa.encrypt(message.encode('utf-8'))
 
-                h = SHA256.new(message.encode('utf-8'))
-                signature = pkcs1_15.new(self.key).sign(h)
+                    # print("ERROR FOR SIGNING")
+                    # h = SHA256.new(message.encode('utf-8'))
+                    # signature = pkcs1_15.new(self.key).sign(h)
 
-                final_message = f"{self.username}:{base64.b64encode(encrypted_message).decode()}:{base64.b64encode(signature).decode()}"
-                recipient_socket.sendall(final_message.encode())
+                    # Generate AES and HMAC keys
+                    aes_key = get_random_bytes(16)
+                    hmac_key = get_random_bytes(16)
+
+                    # Encrypt with AES in CTR mode
+                    cipher = AES.new(aes_key, AES.MODE_CTR)
+                    ciphertext = cipher.encrypt(message.encode('utf-8'))
+
+                    # Compute HMAC
+                    hmac = HMAC.new(hmac_key, digestmod=SHA256)
+                    hmac.update(cipher.nonce + ciphertext)
+                    tag = hmac.digest()
+
+                    # Sign the hashed message with sender's private key
+                    h = SHA256.new(cipher.nonce + ciphertext + tag)
+                    signature = pkcs1_15.new(self.key).sign(h)
+
+
+                    final_message = f"{self.username}:{base64.b64encode(encrypted_message).decode()}:{base64.b64encode(signature).decode()}"
+                    self.socket.sendall(final_message.encode())
+                    print("Message sent successfully!")
+                except Exception as e:
+                    print(f"Error sending message: {str(e)}")
             else:
                 print("Public key of the recipient is not available.")
 
