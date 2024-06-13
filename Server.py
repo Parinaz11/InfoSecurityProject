@@ -100,7 +100,7 @@ class ClientHandler(threading.Thread):
                             del user_handlers[self.username]
 
     def receive_message(self):
-        return self.socket.recv(1024).decode()
+        return self.socket.recv(4096).decode() # 1024
 
     def send_message(self, message):
         self.socket.sendall(message.encode())

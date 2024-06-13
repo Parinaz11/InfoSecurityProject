@@ -50,7 +50,7 @@ class Client:
         self.socket.sendall(message.encode())
 
     def receive_message(self):
-        return self.socket.recv(1024).decode()
+        return self.socket.recv(4096).decode() # 1024
 
     def receive_keys(self):
         private_key_pem = self.receive_message()
@@ -71,6 +71,7 @@ class Client:
         self.send_message(password)
         confirm_password = input("Confirm your password: ")
         self.send_message(confirm_password)
+
         try:
             self.key, self.public_key = self.receive_keys()
         except Exception as e:
