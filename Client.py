@@ -112,6 +112,24 @@ class Client:
             if message == "exit":
                 break
 
+            # # Encrypt the message with AES
+            # aes_key = get_random_bytes(16)
+            # cipher_aes = AES.new(aes_key, AES.MODE_EAX)
+            # ciphertext, tag = cipher_aes.encrypt_and_digest(message.encode('utf-8'))
+            #
+            # # Compute HMAC
+            # hmac = HMAC.new(aes_key, digestmod=SHA256)
+            # hmac.update(ciphertext + tag)
+            # hmac_tag = hmac.digest()
+            #
+            # # Sign the concatenated nonce, ciphertext, and HMAC tag
+            # data_to_sign = cipher_aes.nonce + ciphertext + hmac_tag
+            # h = SHA256.new(data_to_sign)
+            # signature = pkcs1_15.new(self.key).sign(h)
+            #
+            # final_message = f"{self.username}:{base64.b64encode(cipher_aes.nonce).decode()}:{base64.b64encode(ciphertext).decode()}:{base64.b64encode(tag).decode()}:{base64.b64encode(hmac_tag).decode()}:{base64.b64encode(signature).decode()}"
+            # recipient_socket.sendall(final_message.encode())
+
             # Encrypt the message with AES
             aes_key = get_random_bytes(16)
             cipher_aes = AES.new(aes_key, AES.MODE_EAX)
@@ -122,12 +140,12 @@ class Client:
             hmac.update(ciphertext + tag)
             hmac_tag = hmac.digest()
 
-            # Sign the concatenated nonce, ciphertext, and HMAC tag
-            data_to_sign = cipher_aes.nonce + ciphertext + hmac_tag
+            # Sign the concatenated nonce, AES key, ciphertext, and HMAC tag
+            data_to_sign = cipher_aes.nonce + aes_key + ciphertext + hmac_tag
             h = SHA256.new(data_to_sign)
             signature = pkcs1_15.new(self.key).sign(h)
 
-            final_message = f"{self.username}:{base64.b64encode(cipher_aes.nonce).decode()}:{base64.b64encode(ciphertext).decode()}:{base64.b64encode(tag).decode()}:{base64.b64encode(hmac_tag).decode()}:{base64.b64encode(signature).decode()}"
+            final_message = f"{self.username}:{base64.b64encode(cipher_aes.nonce).decode()}:{base64.b64encode(aes_key).decode()}:{base64.b64encode(ciphertext).decode()}:{base64.b64encode(tag).decode()}:{base64.b64encode(hmac_tag).decode()}:{base64.b64encode(signature).decode()}"
             recipient_socket.sendall(final_message.encode())
 
             print("Message sent!")
@@ -160,12 +178,14 @@ def handle_p2p_client(conn):
                 peer_public_key_pem = message.split("PUBLIC_KEY:")[1]
                 peer_public_key = peer_public_key_pem.encode()
                 print("Received peer's public key")
+
             else:
                 # Split the received data into components
                 parts = message.split(":")
-                if len(parts) == 6:
-                    sender_username, nonce, ciphertext, tag, hmac_tag, signed_message = parts
+                if len(parts) == 7:
+                    sender_username, nonce, aes_key, ciphertext, tag, hmac_tag, signed_message = parts
                     nonce = base64.b64decode(nonce)
+                    aes_key = base64.b64decode(aes_key)
                     ciphertext = base64.b64decode(ciphertext)
                     tag = base64.b64decode(tag)
                     hmac_tag = base64.b64decode(hmac_tag)
@@ -174,16 +194,11 @@ def handle_p2p_client(conn):
                     # Verify the message
                     if peer_public_key:
                         peer_rsa_key = RSA.import_key(peer_public_key)
-                        data_to_verify = nonce + ciphertext + hmac_tag
+                        data_to_verify = nonce + aes_key + ciphertext + hmac_tag
                         h = SHA256.new(data_to_verify)
                         try:
                             pkcs1_15.new(peer_rsa_key).verify(h, signature)
                             print("Signature is valid.")
-
-                            # Encrypt the message with AES
-                            aes_key = get_random_bytes(16)
-                            cipher_aes = AES.new(aes_key, AES.MODE_EAX)
-                            ciphertext, tag = cipher_aes.encrypt_and_digest(message.encode('utf-8'))
 
                             # Verify HMAC
                             hmac = HMAC.new(aes_key, digestmod=SHA256)
@@ -200,6 +215,46 @@ def handle_p2p_client(conn):
                         print("Peer public key not received. Cannot verify message.")
                 else:
                     print("Received message format is incorrect.")
+            # else:
+            #     # Split the received data into components
+            #     parts = message.split(":")
+            #     if len(parts) == 6:
+            #         sender_username, nonce, ciphertext, tag, hmac_tag, signed_message = parts
+            #         nonce = base64.b64decode(nonce)
+            #         ciphertext = base64.b64decode(ciphertext)
+            #         tag = base64.b64decode(tag)
+            #         hmac_tag = base64.b64decode(hmac_tag)
+            #         signature = base64.b64decode(signed_message)
+            #
+            #         # Verify the message
+            #         if peer_public_key:
+            #             peer_rsa_key = RSA.import_key(peer_public_key)
+            #             data_to_verify = nonce + ciphertext + hmac_tag
+            #             h = SHA256.new(data_to_verify)
+            #             try:
+            #                 pkcs1_15.new(peer_rsa_key).verify(h, signature)
+            #                 print("Signature is valid.")
+            #
+            #                 # Encrypt the message with AES
+            #                 aes_key = get_random_bytes(16)
+            #                 cipher_aes = AES.new(aes_key, AES.MODE_EAX)
+            #                 ciphertext, tag = cipher_aes.encrypt_and_digest(message.encode('utf-8'))
+            #
+            #                 # Verify HMAC
+            #                 hmac = HMAC.new(aes_key, digestmod=SHA256)
+            #                 hmac.update(ciphertext + tag)
+            #                 hmac.verify(hmac_tag)
+            #
+            #                 # Decrypt the message
+            #                 cipher_aes = AES.new(aes_key, AES.MODE_EAX, nonce=nonce)
+            #                 decrypted_message = cipher_aes.decrypt_and_verify(ciphertext, tag)
+            #                 print("Received message:", decrypted_message.decode('utf-8'))
+            #             except (ValueError, TypeError) as e:
+            #                 print("Signature verification failed.", str(e))
+            #         else:
+            #             print("Peer public key not received. Cannot verify message.")
+            #     else:
+            #         print("Received message format is incorrect.")
 
 def main():
     client = Client()
