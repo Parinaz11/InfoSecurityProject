@@ -131,6 +131,7 @@ class Client:
             p2p_thread = threading.Thread(target=start_group_server, args=(group_port,), daemon=True)
             p2p_thread.start()
 
+
     def private_chat(self):
         self.send_message("privateChat")
         recipient_username = input("Enter recipient username: ")
