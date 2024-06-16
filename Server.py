@@ -1,4 +1,5 @@
 import socket
+import ssl
 import threading
 import hashlib
 import base64
@@ -8,11 +9,13 @@ from Crypto.Cipher import AES
 from Crypto.Hash import SHA256, HMAC
 from Crypto.Signature import pkcs1_15
 from Cryptodome.PublicKey import RSA
+from OpenSSL import crypto
 
 PORT = 12345
 HOST = 'localhost'
 p2p_port = 12346
 num_ports = 1
+passphrase = b'123'
 
 class User:
     def __init__(self, email, username, password_hash, salt, address=None, p2p_port=None): # , public_key, private_key
@@ -150,6 +153,36 @@ class ClientHandler(threading.Thread):
         else:
             self.send_message("User does not exist.")
 
+    # Function to create a certificate using the user's public key
+    def generate_certificate(self, user_public_key):
+        # Load CA certificate and key
+        crt_path = r"C:\Users\parin\PycharmProjects\InfoSecurity\.venv\ca.crt"
+        with open(crt_path, "rb") as ca_cert_file:
+            ca_cert = crypto.load_certificate(crypto.FILETYPE_PEM, ca_cert_file.read())
+        # print("CACERT IS:", ca_cert)
+        key_path = r"C:\Users\parin\PycharmProjects\InfoSecurity\.venv\ca.key"
+        with open(key_path, "rb") as ca_key_file:
+            content = ca_key_file.read()
+            # print("content:", content)
+            ca_key = crypto.load_privatekey(crypto.FILETYPE_PEM, content, passphrase)
+        # print("CAKEY IS:", ca_key)
+
+        # Generate a certificate
+        # print("GENERATING CERTIFICATE")
+        cert = crypto.X509()
+        cert.get_subject().CN = "User"
+        cert.set_serial_number(1000)
+        cert.gmtime_adj_notBefore(0)
+        cert.gmtime_adj_notAfter(10 * 365 * 24 * 60 * 60)  # Valid for 10 years
+        cert.set_issuer(ca_cert.get_subject())
+        cert.set_pubkey(crypto.load_publickey(crypto.FILETYPE_PEM, user_public_key))
+        cert.sign(ca_key, 'sha256')
+
+        # Convert certificate to PEM format
+        # print("CONVERTING CERTIFICATE")
+        cert_pem = crypto.dump_certificate(crypto.FILETYPE_PEM, cert)
+        return cert_pem
+
     def handle_create_group_chat(self):
         global num_ports
         global p2p_port
@@ -159,7 +192,7 @@ class ClientHandler(threading.Thread):
         receive_key = self.receive_message()
         pk = None
         if receive_key.startswith("PUBLIC_KEY:"):
-            # Receive and set the peer's public key
+            # Receive and set the user's public key
             user_public_key_pem = receive_key.split("PUBLIC_KEY:")[1]
             user_public_key = user_public_key_pem.encode()
             pk = user_public_key
@@ -215,10 +248,14 @@ class ClientHandler(threading.Thread):
         else:
             with group_lock:
                 groups[group_name] = (group_name, id)
-            # Sending a unique group port to this client
-            num_ports += 1
-            unique_group_port = p2p_port + num_ports
-            self.send_message(str(unique_group_port))
+                # Sending a unique group port to this client
+                num_ports += 1
+                unique_group_port = p2p_port + num_ports
+                self.send_message(str(unique_group_port))
+                # Create and send a certificate for this user
+                cert_pem = self.generate_certificate(pk)
+                print(f"Generated Certificate: {cert_pem}")
+                self.socket.sendall(cert_pem)
 
 
 

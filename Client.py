@@ -117,8 +117,6 @@ class Client:
         final_message = f"{self.username}:{base64.b64encode(cipher_aes.nonce).decode()}:{base64.b64encode(aes_key).decode()}:{base64.b64encode(ciphertext).decode()}:{base64.b64encode(tag).decode()}:{base64.b64encode(hmac_tag).decode()}:{base64.b64encode(signature).decode()}"
         self.send_message(final_message)
 
-
-        # self.send_message(group_name)
         # Receive a new unique port number in which the client listens on
         received = self.receive_message()
         if received == "Not allowed":
@@ -127,9 +125,11 @@ class Client:
             print("Group name already taken. Please choose another.")
         else:
             group_port = int(received)
+            print("Group port received:", group_port)
+            certificate = self.socket.recv(4096)
+            print("CERT:", str(certificate))
             p2p_thread = threading.Thread(target=start_group_server, args=(group_port,), daemon=True)
             p2p_thread.start()
-
 
     def private_chat(self):
         self.send_message("privateChat")
