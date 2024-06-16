@@ -1,5 +1,6 @@
+import random
 import socket
-import ssl
+import string
 import threading
 import hashlib
 import base64
@@ -153,41 +154,10 @@ class ClientHandler(threading.Thread):
         else:
             self.send_message("User does not exist.")
 
-    # Function to create a certificate using the user's public key
-    def generate_certificate(self, user_public_key):
-        # Load CA certificate and key
-        crt_path = r"C:\Users\parin\PycharmProjects\InfoSecurity\.venv\ca.crt"
-        with open(crt_path, "rb") as ca_cert_file:
-            ca_cert = crypto.load_certificate(crypto.FILETYPE_PEM, ca_cert_file.read())
-        # print("CACERT IS:", ca_cert)
-        key_path = r"C:\Users\parin\PycharmProjects\InfoSecurity\.venv\ca.key"
-        with open(key_path, "rb") as ca_key_file:
-            content = ca_key_file.read()
-            # print("content:", content)
-            ca_key = crypto.load_privatekey(crypto.FILETYPE_PEM, content, passphrase)
-        # print("CAKEY IS:", ca_key)
-
-        # Generate a certificate
-        # print("GENERATING CERTIFICATE")
-        cert = crypto.X509()
-        cert.get_subject().CN = "User"
-        cert.set_serial_number(1000)
-        cert.gmtime_adj_notBefore(0)
-        cert.gmtime_adj_notAfter(10 * 365 * 24 * 60 * 60)  # Valid for 10 years
-        cert.set_issuer(ca_cert.get_subject())
-        cert.set_pubkey(crypto.load_publickey(crypto.FILETYPE_PEM, user_public_key))
-        cert.sign(ca_key, 'sha256')
-
-        # Convert certificate to PEM format
-        # print("CONVERTING CERTIFICATE")
-        cert_pem = crypto.dump_certificate(crypto.FILETYPE_PEM, cert)
-        return cert_pem
-
     def handle_create_group_chat(self):
         global num_ports
         global p2p_port
 
-        # id = self.receive_message()
         # Receive public key of the user
         receive_key = self.receive_message()
         pk = None
@@ -199,8 +169,7 @@ class ClientHandler(threading.Thread):
 
         id = None
         group_name = None
-        # Checking the sign from user
-        # Split the received data into components
+        # Checking the sign from user. Split the received data into components
         message = self.receive_message()
         parts = message.split(":")
         if len(parts) == 7:
@@ -253,11 +222,42 @@ class ClientHandler(threading.Thread):
                 unique_group_port = p2p_port + num_ports
                 self.send_message(str(unique_group_port))
                 # Create and send a certificate for this user
-                cert_pem = self.generate_certificate(pk)
+                cert_pem = generate_certificate(pk, user.username)
                 print(f"Generated Certificate: {cert_pem}")
                 self.socket.sendall(cert_pem)
 
 
+# Function to create a certificate using the user's public key
+def generate_certificate(user_public_key, username):
+    # Load CA certificate and key
+    crt_path = r"C:\Users\parin\PycharmProjects\InfoSecurity\.venv\ca.crt"
+    with open(crt_path, "rb") as ca_cert_file:
+        ca_cert = crypto.load_certificate(crypto.FILETYPE_PEM, ca_cert_file.read())
+    key_path = r"C:\Users\parin\PycharmProjects\InfoSecurity\.venv\ca.key"
+    with open(key_path, "rb") as ca_key_file:
+        content = ca_key_file.read()
+        ca_key = crypto.load_privatekey(crypto.FILETYPE_PEM, content, passphrase)
+
+    # More random and unique certificate
+    cert = crypto.X509()
+    cert.get_subject().CN = username
+    cert.get_subject().O = ''.join(
+        random.choices(string.ascii_letters + string.digits, k=8))  # Random organization name
+    cert.get_subject().OU = ''.join(
+        random.choices(string.ascii_letters + string.digits, k=8))  # Random organizational unit
+    cert.get_subject().C = ''.join(random.choices(string.ascii_letters, k=2))  # Random country code
+    cert.get_subject().ST = ''.join(random.choices(string.ascii_letters, k=8))  # Random state
+    cert.get_subject().L = ''.join(random.choices(string.ascii_letters, k=8))  # Random locality
+    cert.set_serial_number(int.from_bytes(os.urandom(16), byteorder='big'))  # Random serial number
+    cert.gmtime_adj_notBefore(0)
+    cert.gmtime_adj_notAfter(10 * 365 * 24 * 60 * 60)  # Valid for 10 years
+    cert.set_issuer(ca_cert.get_subject())
+    cert.set_pubkey(crypto.load_publickey(crypto.FILETYPE_PEM, user_public_key))
+    cert.sign(ca_key, 'sha256')
+
+    # Convert certificate to PEM format
+    cert_pem = crypto.dump_certificate(crypto.FILETYPE_PEM, cert)
+    return cert_pem
 
 def main():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
