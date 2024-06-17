@@ -12,6 +12,7 @@ HOST = 'localhost'
 PORT = 12345
 P2P_PORT = 12346
 peer_public_key = None
+groups = dict() # key:group name, value:(access level, certificate)
 
 class Client:
     def __init__(self):
@@ -32,10 +33,9 @@ class Client:
                 print("2. Login")
                 print("3. Exit")
                 print("4. Private Chat")
-                print("5. Join Group Chat")
+                print("5. Group Chats")
                 if self.access_level == 1:
                     print("6. Create Group Chat")
-
 
                 choice = input("Enter your choice: ")
 
@@ -49,7 +49,8 @@ class Client:
                 elif choice == "4":
                     self.private_chat()
                 elif choice == "5":
-                    print("Working on join...")
+                    self.enter_group_chat()
+                    print("Working on enter group chat...")
                 elif choice == "6" and self.access_level == 1:
                     self.create_group_chat()
                 else:
@@ -93,6 +94,37 @@ class Client:
 
         print(self.receive_message())
 
+    def enter_group_chat(self):
+        print("--- Your Groups ---")
+        # !!! GETTING THE GROUPS FROM SERVER: EACH USER HAS A GROUP DICT (not in client)
+        for group in groups:
+            print(f'{group} (access level {groups.get(group)[0]})')
+        group_name = input("Enter the group name: ")
+        if group_name not in groups: print("Group does not exist")
+        else:
+            print("1. Enter group")
+            al = groups.get(group_name)[0]
+            if al == 1:
+                print("2. Add to group")
+                print("3. Modify user access levels")
+
+            command = int(input("Enter your choice: "))
+            if command == 1:
+                print(f"Entered group {group_name}")
+            elif command == 2 and al == 1:
+                name_add = input("Enter a username:")
+                # !!! Getting the user's public key from the server and modifying the user's groups in server
+                # to have the access level and certificate for this group
+                # !!! it should send the certificate privately (works like p2p communication)
+                print(f"Added {name_add} to {group_name}")
+            elif command == 3 and al == 1:
+                name_modify = input("Enter a username:")
+                level_modify = input("Enter an access level (0/1):")
+                print(f"User {name_modify} with access level {level_modify} for group {group_name}")
+
+            # Asking the server for port of the group
+
+
     def create_group_chat(self):
         self.send_message("CreatingGroupChat")
 
@@ -128,7 +160,7 @@ class Client:
             print("Group port received:", group_port)
             certificate = self.socket.recv(4096)
             print("CERT:", str(certificate))
-            p2p_thread = threading.Thread(target=start_group_server, args=(group_port,), daemon=True)
+            p2p_thread = threading.Thread(target=start_group_server, args=(group_port,group_name,certificate), daemon=True)
             p2p_thread.start()
 
 
@@ -247,11 +279,12 @@ def handle_p2p_client(conn):
                     print("Received message format is incorrect.")
 
 
-def start_group_server(group_port):
+def start_group_server(group_port, group_name, certificate):
     group_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     group_socket.bind((HOST, group_port))
     group_socket.listen(1)
     print(f"Group server listening on port {group_port}")
+    groups[group_name] = (1,certificate) # Access level of admin
 
     while True:
         conn, addr = group_socket.accept()
