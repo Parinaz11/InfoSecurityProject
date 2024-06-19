@@ -13,7 +13,6 @@ HOST = 'localhost'
 PORT = 12345
 P2P_PORT = 12346
 peer_public_key = None
-# groups = dict() # key:group name, value:(access level, certificate)
 
 class Client:
     def __init__(self):

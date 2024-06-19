@@ -25,8 +25,6 @@ class User:
         self.username = username
         self.password_hash = password_hash
         self.salt = salt
-        # self.public_key = public_key
-        # self.private_key = private_key
         self.address = address
         self.p2p_port = p2p_port
 
