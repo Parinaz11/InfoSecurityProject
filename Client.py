@@ -1,3 +1,4 @@
+import json
 import socket
 import threading
 import base64
@@ -12,7 +13,7 @@ HOST = 'localhost'
 PORT = 12345
 P2P_PORT = 12346
 peer_public_key = None
-groups = dict() # key:group name, value:(access level, certificate)
+# groups = dict() # key:group name, value:(access level, certificate)
 
 class Client:
     def __init__(self):
@@ -95,12 +96,23 @@ class Client:
         print(self.receive_message())
 
     def enter_group_chat(self):
+        self.send_message("EnterGroups")
         print("--- Your Groups ---")
         # !!! GETTING THE GROUPS FROM SERVER: EACH USER HAS A GROUP DICT (not in client)
+        self.send_message(self.username)
+
+        # # Receive the groups dictionary
+        # groups = json.loads(self.receive_message())
+        # Receive the JSON-encoded groups dictionary
+        groups_json = self.socket.recv(4096).decode('utf-8')
+        # Deserialize the JSON string to a dictionary
+        groups = json.loads(groups_json)
+
         for group in groups:
             print(f'{group} (access level {groups.get(group)[0]})')
         group_name = input("Enter the group name: ")
-        if group_name not in groups: print("Group does not exist")
+        if group_name not in groups:
+            print("Group does not exist")
         else:
             print("1. Enter group")
             al = groups.get(group_name)[0]
@@ -158,9 +170,9 @@ class Client:
         else:
             group_port = int(received)
             print("Group port received:", group_port)
-            certificate = self.socket.recv(4096)
-            print("CERT:", str(certificate))
-            p2p_thread = threading.Thread(target=start_group_server, args=(group_port,group_name,certificate), daemon=True)
+            # certificate = self.socket.recv(4096)
+            # print("CERT:", str(certificate))
+            p2p_thread = threading.Thread(target=start_group_server, args=(group_port,group_name), daemon=True) # ,certificate
             p2p_thread.start()
 
 
@@ -279,12 +291,12 @@ def handle_p2p_client(conn):
                     print("Received message format is incorrect.")
 
 
-def start_group_server(group_port, group_name, certificate):
+def start_group_server(group_port, group_name): # , certificate
     group_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     group_socket.bind((HOST, group_port))
     group_socket.listen(1)
     print(f"Group server listening on port {group_port}")
-    groups[group_name] = (1,certificate) # Access level of admin
+    # groups[group_name] = (1,certificate) # Access level of admin
 
     while True:
         conn, addr = group_socket.accept()

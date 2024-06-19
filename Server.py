@@ -1,3 +1,4 @@
+import json
 import random
 import socket
 import string
@@ -30,6 +31,7 @@ class User:
         self.p2p_port = p2p_port
 
         self.access_level = 1
+        self.groups = dict()  # key:group name, value:(access level, certificate)
 
 
 class UserManager:
@@ -99,6 +101,8 @@ class ClientHandler(threading.Thread):
                         self.handle_private_chat_request()
                     elif command == "CreatingGroupChat":
                         self.handle_create_group_chat()
+                    elif command == "EnterGroups":
+                        self.handle_enter_groups()
                     else:
                         self.send_message("Unknown command!")
 
@@ -153,6 +157,17 @@ class ClientHandler(threading.Thread):
             self.send_message(f"{recipient_user.address}:{recipient_user.p2p_port}")
         else:
             self.send_message("User does not exist.")
+
+    def handle_enter_groups(self):
+        # Receiving the user's id
+        user_username = self.receive_message()
+        user = self.user_manager.find_user_by_username(user_username)
+        # Serialize the dictionary to a JSON string and send it
+        self.send_message(json.dumps(user.groups))
+        # groups_json = json.dumps(user.groups)
+        # # Encode the JSON string to bytes and send it
+        # self.socket.sendall(groups_json.encode('utf-8'))
+
 
     def handle_create_group_chat(self):
         global num_ports
@@ -224,7 +239,10 @@ class ClientHandler(threading.Thread):
                 # Create and send a certificate for this user
                 cert_pem = generate_certificate(pk, user.username)
                 print(f"Generated Certificate: {cert_pem}")
-                self.socket.sendall(cert_pem)
+                # Create the group with this certificate
+                certificate = cert_pem.decode() # convert to string
+                user.groups[group_name] = (1, certificate)  # Access level of admin
+                # self.socket.sendall(cert_pem)
 
 
 # Function to create a certificate using the user's public key
