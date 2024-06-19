@@ -158,16 +158,68 @@ class ClientHandler(threading.Thread):
         else:
             self.send_message("User does not exist.")
 
+    def find_group_from_groupname(self, admin, group_name):
+        for g in admin.groups:
+            if g.name == group_name:
+                return g
+
     def handle_enter_groups(self):
-        # Receiving the user's id
         user_username = self.receive_message()
         user = self.user_manager.find_user_by_username(user_username)
-        # Serialize the dictionary to a JSON string and send it
         self.send_message(json.dumps(user.groups))
-        # groups_json = json.dumps(user.groups)
-        # # Encode the JSON string to bytes and send it
-        # self.socket.sendall(groups_json.encode('utf-8'))
+        user_command = self.receive_message()
 
+        if user_command == "1":
+            group_name = self.receive_message()
+            print(f"User {user.username} wants to connect to group {group_name}")
+        elif user_command == "2":
+            add_info = self.receive_message().split(',')
+            name_add, group_name = add_info[0], add_info[1]
+
+            with group_lock:
+                user_to_add = self.user_manager.find_user_by_username(name_add)
+                group_certificate = user.groups[group_name][1]
+                user_to_add.groups[group_name] = (0, group_certificate)
+                print(f"Added user {user_to_add.username} to group {group_name}")
+        elif user_command == "3":
+            modify_info = self.receive_message().split(',')
+            name_modify, level_modify, group_name = modify_info[0], int(modify_info[1]), modify_info[2]
+
+            with group_lock:
+                user_to_modify = self.user_manager.find_user_by_username(name_modify)
+                if group_name in user.groups:
+                    user_to_modify.groups[group_name] = (level_modify, user.groups[group_name][1])
+                    print(f"Modified user {user_to_modify.username} access level to {level_modify} for group {group_name}")
+        else:
+            print(f"Unknown command {user_command}")
+
+    # def handle_enter_groups(self):
+    #
+    #     # Receiving the user's id
+    #     user_username = self.receive_message()
+    #     user = self.user_manager.find_user_by_username(user_username)
+    #     # Serialize the dictionary to a JSON string and send it
+    #     print(f"SENDING to {user.username} groups {user.groups}")
+    #     self.send_message(json.dumps(user.groups))
+    #     # groups_json = json.dumps(user.groups)
+    #     # # Encode the JSON string to bytes and send it
+    #     # self.socket.sendall(groups_json.encode('utf-8'))
+    #
+    #     # Check user command
+    #     user_command = self.receive_message()
+    #     if user_command == "1":
+    #         group_name = self.receive_message()
+    #         print("User wants to connect to group", group_name)
+    #     elif user_command == "2":
+    #         add_info = self.receive_message().split(',') # Getting the name of the user who
+    #         name_add = add_info[0]
+    #         group_name = add_info[1]
+    #         with group_lock:
+    #             # Adding the group_name to the list of the user's groups
+    #             user_toadd = self.user_manager.find_user_by_username(name_add)
+    #             group_certificate = user.groups[group_name][1]
+    #             user_toadd.groups[group_name] = (0, group_certificate)
+    #             print(f"User with username {user_toadd.username} is {user_toadd.groups}")
 
     def handle_create_group_chat(self):
         global num_ports

@@ -98,43 +98,101 @@ class Client:
     def enter_group_chat(self):
         self.send_message("EnterGroups")
         print("--- Your Groups ---")
-        # !!! GETTING THE GROUPS FROM SERVER: EACH USER HAS A GROUP DICT (not in client)
         self.send_message(self.username)
+        try:
+            # Receive the JSON-encoded groups dictionary
+            groups_json = self.socket.recv(4096).decode('utf-8')
+            # Deserialize the JSON string to a dictionary
+            groups = json.loads(groups_json)
+        except (json.JSONDecodeError, KeyError):
+            print("Failed to decode groups data")
+            return
 
-        # # Receive the groups dictionary
-        # groups = json.loads(self.receive_message())
-        # Receive the JSON-encoded groups dictionary
-        groups_json = self.socket.recv(4096).decode('utf-8')
-        # Deserialize the JSON string to a dictionary
-        groups = json.loads(groups_json)
+        if not groups:
+            print("No groups found")
+            return
 
-        for group in groups:
-            print(f'{group} (access level {groups.get(group)[0]})')
+        for group, details in groups.items():
+            print(f'{group} (access level {details[0]})')
+
         group_name = input("Enter the group name: ")
+
         if group_name not in groups:
             print("Group does not exist")
-        else:
-            print("1. Enter group")
-            al = groups.get(group_name)[0]
-            if al == 1:
-                print("2. Add to group")
-                print("3. Modify user access levels")
+            return
 
+        print("1. Enter group")
+        access_level = groups[group_name][0]
+
+        if access_level == 1:
+            print("2. Add to group")
+            print("3. Modify user access levels")
+
+        try:
             command = int(input("Enter your choice: "))
-            if command == 1:
-                print(f"Entered group {group_name}")
-            elif command == 2 and al == 1:
-                name_add = input("Enter a username:")
-                # !!! Getting the user's public key from the server and modifying the user's groups in server
-                # to have the access level and certificate for this group
-                # !!! it should send the certificate privately (works like p2p communication)
-                print(f"Added {name_add} to {group_name}")
-            elif command == 3 and al == 1:
-                name_modify = input("Enter a username:")
-                level_modify = input("Enter an access level (0/1):")
-                print(f"User {name_modify} with access level {level_modify} for group {group_name}")
+        except ValueError:
+            print("Invalid input")
+            return
 
-            # Asking the server for port of the group
+        self.send_message(str(command))
+
+        if command == 1:
+            print(f"Entered group {group_name}")
+            self.send_message(group_name)
+        elif command == 2 and access_level == 1:
+            name_add = input("Enter a username: ")
+            self.send_message(f"{name_add},{group_name}")
+            print(f"Added {name_add} to {group_name}")
+        elif command == 3 and access_level == 1:
+            name_modify = input("Enter a username: ")
+            level_modify = input("Enter an access level (0/1): ")
+            self.send_message(f"{name_modify},{level_modify},{group_name}")
+            print(f"User {name_modify} with access level {level_modify} for group {group_name}")
+        else:
+            print("Invalid command or insufficient access level")
+
+    # def enter_group_chat(self):
+    #     self.send_message("EnterGroups")
+    #     print("--- Your Groups ---")
+    #     self.send_message(self.username)
+    #     # Receive the JSON-encoded groups dictionary
+    #     groups_json = self.socket.recv(4096).decode('utf-8')
+    #     # Deserialize the JSON string to a dictionary
+    #     groups = json.loads(groups_json)
+    #
+    #     if groups:
+    #         for group in groups:
+    #             print(f'{group} (access level {groups.get(group)[0]})')
+    #         group_name = input("Enter the group name: ")
+    #         if group_name not in groups:
+    #             print("Group does not exist")
+    #         else:
+    #             print("1. Enter group")
+    #             al = groups.get(group_name)[0]
+    #             if al == 1:
+    #                 print("2. Add to group")
+    #                 print("3. Modify user access levels")
+    #
+    #             command = int(input("Enter your choice: "))
+    #             self.send_message(str(command))  # Send the command to server for processing
+    #             if command == 1:
+    #                 print(f"Entered group {group_name}")
+    #                 self.send_message(group_name) # Sending the group name to server
+    #             elif command == 2 and al == 1:
+    #                 name_add = input("Enter a username:")
+    #                 self.send_message(name_add + ',' + group_name) # Send the name to server
+    #                 # !!! Getting the user's public key from the server and modifying the user's groups in server
+    #                 # to have the access level and certificate for this group
+    #                 # !!! it should send the certificate privately (works like p2p communication)
+    #                 print(f"Added {name_add} to {group_name}")
+    #             elif command == 3 and al == 1:
+    #                 name_modify = input("Enter a username:")
+    #                 level_modify = input("Enter an access level (0/1):")
+    #                 print(f"User {name_modify} with access level {level_modify} for group {group_name}")
+    #     else:
+    #         print("No groups found")
+    #
+    #         Asking the server for port of the group
 
 
     def create_group_chat(self):
