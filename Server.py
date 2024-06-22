@@ -171,6 +171,9 @@ class ClientHandler(threading.Thread):
         if user_command == "1":
             group_name = self.receive_message()
             print(f"User {user.username} wants to connect to group {group_name}")
+            # Send the port number of that group to the user
+            print("Send port number ", str(groups_info[group_name][2]))
+            self.send_message(str(groups_info[group_name][2]))
         elif user_command == "2":
             add_info = self.receive_message().split(',')
             name_add, group_name = add_info[0], add_info[1]
@@ -284,10 +287,10 @@ class ClientHandler(threading.Thread):
             self.send_message("exists")
         else:
             with group_lock:
-                groups_info[group_name] = (group_name, id)
                 # Sending a unique group port to this client
                 num_ports += 1
                 unique_group_port = p2p_port + num_ports
+                groups_info[group_name] = (group_name, id, unique_group_port)
                 self.send_message(str(unique_group_port))
                 # Create and send a certificate for this user
                 cert_pem = generate_certificate(pk, user.username)
@@ -350,7 +353,7 @@ if __name__ == "__main__":
     user_manager = UserManager()
     user_handlers = {}
     user_handlers_lock = threading.Lock()
-    groups_info = {}  # Stores (group name, admin user id)
+    groups_info = {}  # Stores (group name, admin user id, group port)
     group_lock = threading.Lock()
     group_members = {}  # Stores (username, user public key)
     main()
