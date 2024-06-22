@@ -174,6 +174,17 @@ class ClientHandler(threading.Thread):
             # Send the port number of that group to the user
             print("Send port number ", str(groups_info[group_name][2]))
             self.send_message(str(groups_info[group_name][2]))
+            # Send member ports of this group
+            if user.access_level == 1:
+                # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! SENDS WRONG
+                # print("SENDING", str(group_members[group_name]))
+                ports = ''
+                for member in group_members[group_name]:
+                    print("M is", member)
+                    u = self.user_manager.find_user_by_username(member)
+                    ports = ports + str(u.p2p_port) + ','
+                print("SENDING PORTS ", ports)
+                self.send_message(ports[:-1])  # Not sending the last character which is a comma
         elif user_command == "2":
             add_info = self.receive_message().split(',')
             name_add, group_name = add_info[0], add_info[1]
@@ -182,7 +193,8 @@ class ClientHandler(threading.Thread):
                 user_to_add = self.user_manager.find_user_by_username(name_add)
                 group_certificate = user.groups[group_name][1]
                 user_to_add.groups[group_name] = (0, group_certificate)
-                group_members[group_name] = (user_to_add, user_to_add.public_key)
+                group_members[group_name].add((user_to_add.username, user_to_add.public_key)) # Add a set
+                print("Group members now is:", group_members[group_name])
                 print(f"Added user {user_to_add.username} to group {group_name}")
         elif user_command == "3":
             modify_info = self.receive_message().split(',')
@@ -192,7 +204,7 @@ class ClientHandler(threading.Thread):
                 user_to_modify = self.user_manager.find_user_by_username(name_modify)
                 if group_name in user.groups:
                     user_to_modify.groups[group_name] = (level_modify, user.groups[group_name][1])
-                    group_members[group_name] = (user_to_modify, user_to_modify.public_key)
+                    group_members[group_name].add((user_to_modify, user_to_modify.public_key))
                     print(f"Modified user {user_to_modify.username} access level to {level_modify} for group {group_name}")
         else:
             print(f"Unknown command {user_command}")
@@ -298,7 +310,7 @@ class ClientHandler(threading.Thread):
                 # Create the group with this certificate
                 certificate = cert_pem.decode() # convert to string
                 user.groups[group_name] = (1, certificate)  # Access level of admin
-                group_members[group_name] = (user, user.public_key)  # Adding username and their public key
+                group_members[group_name].add((user.username, user.public_key))   # Adding username and their public key
                 # self.socket.sendall(cert_pem)
 
 
@@ -355,5 +367,5 @@ if __name__ == "__main__":
     user_handlers_lock = threading.Lock()
     groups_info = {}  # Stores (group name, admin user id, group port)
     group_lock = threading.Lock()
-    group_members = {}  # Stores (username, user public key)
+    group_members = {}  # Stores tuple (username, user public key)
     main()
