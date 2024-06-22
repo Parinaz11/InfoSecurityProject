@@ -75,6 +75,8 @@ class Client:
         self.send_message(password)
         confirm_password = input("Confirm your password: ")
         self.send_message(confirm_password)
+        # Send public key
+        self.send_message(self.public_key.decode())
 
         print(self.receive_message())
 
@@ -141,6 +143,8 @@ class Client:
         elif command == 2 and access_level == 1:
             name_add = input("Enter a username: ")
             self.send_message(f"{name_add},{group_name}")
+            # Sending the certificate to the client using the private chat
+            self.private_chat(groups[group_name][1])
             print(f"Added {name_add} to {group_name}")
         elif command == 3 and access_level == 1:
             name_modify = input("Enter a username: ")
@@ -232,8 +236,7 @@ class Client:
             p2p_thread = threading.Thread(target=start_group_server, args=(group_port,group_name), daemon=True) # ,certificate
             p2p_thread.start()
 
-
-    def private_chat(self):
+    def private_chat(self, group_certificate=None):
         self.send_message("privateChat")
         recipient_username = input("Enter recipient username: ")
         self.send_message(recipient_username)
@@ -243,42 +246,48 @@ class Client:
             p2p_info = self.receive_message()
             print('P2P info', p2p_info)
             address, port = p2p_info.split(":")
-            self.p2p_chat(address, int(port))
+            self.p2p_chat(address, int(port), group_certificate)
         else:
             print("Failed to initiate private chat:", p2p_info_confirm)
 
-    def p2p_chat(self, address, port):
+    def p2p_chat(self, address, port, group_certificate):
         recipient_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         recipient_socket.connect((address, port))
 
         # Send the public key to the peer
         recipient_socket.sendall(f"PUBLIC_KEY:{self.public_key.decode()}".encode())
 
-        print("Start typing your messages (type 'exit' to end chat):")
-        while True:
-            message = input()
-            if message == "exit":
-                break
-            message = f"*{self.username}*: " + message
-            # Encrypt the message with AES
-            aes_key = get_random_bytes(16)
-            cipher_aes = AES.new(aes_key, AES.MODE_EAX)
-            ciphertext, tag = cipher_aes.encrypt_and_digest(message.encode('utf-8'))
+        if group_certificate is not None:
+            message = "CERT:" + group_certificate
+            recipient_socket.sendall(message.encode('utf-8'))
+            print("Group certificate sent as", message)
+        else:
 
-            # Compute HMAC
-            hmac = HMAC.new(aes_key, digestmod=SHA256)
-            hmac.update(ciphertext + tag)
-            hmac_tag = hmac.digest()
+            print("Start typing your messages (type 'exit' to end chat):")
+            while True:
+                message = input()
+                if message == "exit":
+                    break
+                message = f"*{self.username}*: " + message
+                # Encrypt the message with AES
+                aes_key = get_random_bytes(16)
+                cipher_aes = AES.new(aes_key, AES.MODE_EAX)
+                ciphertext, tag = cipher_aes.encrypt_and_digest(message.encode('utf-8'))
 
-            # Sign the concatenated nonce, AES key, ciphertext, and HMAC tag
-            data_to_sign = cipher_aes.nonce + aes_key + ciphertext + hmac_tag
-            h = SHA256.new(data_to_sign)
-            signature = pkcs1_15.new(self.key).sign(h)
+                # Compute HMAC
+                hmac = HMAC.new(aes_key, digestmod=SHA256)
+                hmac.update(ciphertext + tag)
+                hmac_tag = hmac.digest()
 
-            final_message = f"{self.username}:{base64.b64encode(cipher_aes.nonce).decode()}:{base64.b64encode(aes_key).decode()}:{base64.b64encode(ciphertext).decode()}:{base64.b64encode(tag).decode()}:{base64.b64encode(hmac_tag).decode()}:{base64.b64encode(signature).decode()}"
-            recipient_socket.sendall(final_message.encode())
+                # Sign the concatenated nonce, AES key, ciphertext, and HMAC tag
+                data_to_sign = cipher_aes.nonce + aes_key + ciphertext + hmac_tag
+                h = SHA256.new(data_to_sign)
+                signature = pkcs1_15.new(self.key).sign(h)
 
-            print("Message sent.")
+                final_message = f"{self.username}:{base64.b64encode(cipher_aes.nonce).decode()}:{base64.b64encode(aes_key).decode()}:{base64.b64encode(ciphertext).decode()}:{base64.b64encode(tag).decode()}:{base64.b64encode(hmac_tag).decode()}:{base64.b64encode(signature).decode()}"
+                recipient_socket.sendall(final_message.encode())
+
+                print("Message sent.")
 
         recipient_socket.close()
 
@@ -309,8 +318,10 @@ def handle_p2p_client(conn):
                 peer_public_key_pem = message.split("PUBLIC_KEY:")[1]
                 peer_public_key = peer_public_key_pem.encode()
                 print("Received peer's public key.")
-
+            elif message.startswith("CERT:"):
+                print("Received certificate:", message[5:])
             else:
+                print("Received", message)
                 # Split the received data into components
                 parts = message.split(":")
                 if len(parts) == 7:

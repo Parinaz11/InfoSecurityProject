@@ -20,14 +20,14 @@ num_ports = 1
 passphrase = b'123'
 
 class User:
-    def __init__(self, email, username, password_hash, salt, address=None, p2p_port=None): # , public_key, private_key
+    def __init__(self, email, username, password_hash, salt, public_key_pem, address=None, p2p_port=None): # , public_key, private_key
         self.email = email
         self.username = username
         self.password_hash = password_hash
         self.salt = salt
         self.address = address
         self.p2p_port = p2p_port
-
+        self.public_key = public_key_pem.encode()
         self.access_level = 1
         self.groups = dict()  # key:group name, value:(access level, certificate)
 
@@ -36,7 +36,7 @@ class UserManager:
     def __init__(self):
         self.users = []
 
-    def register_user(self, email, username, password, confirm_password):
+    def register_user(self, email, username, password, confirm_password, public_key_pem):
         if password != confirm_password:
             return False
 
@@ -46,7 +46,7 @@ class UserManager:
         salt = self.generate_salt()
         hashed_password = self.hash_password(password, salt)
         # key_pair = RSA.generate(2048)
-        user = User(email, username, hashed_password, salt)  # , key_pair.publickey(), key_pair
+        user = User(email, username, hashed_password, salt, public_key_pem)  # , key_pair.publickey(), key_pair
         self.users.append(user)
         return True
 
@@ -124,7 +124,8 @@ class ClientHandler(threading.Thread):
         username = self.receive_message()
         password = self.receive_message()
         confirm_password = self.receive_message()
-        success = self.user_manager.register_user(email, username, password, confirm_password)
+        public_key_pem = self.receive_message()
+        success = self.user_manager.register_user(email, username, password, confirm_password, public_key_pem)
         self.send_message("Registration successful!" if success else "Registration failed!")
 
     def handle_login(self):
@@ -178,6 +179,7 @@ class ClientHandler(threading.Thread):
                 user_to_add = self.user_manager.find_user_by_username(name_add)
                 group_certificate = user.groups[group_name][1]
                 user_to_add.groups[group_name] = (0, group_certificate)
+                group_members[group_name] = (user_to_add, user_to_add.public_key)
                 print(f"Added user {user_to_add.username} to group {group_name}")
         elif user_command == "3":
             modify_info = self.receive_message().split(',')
@@ -187,6 +189,7 @@ class ClientHandler(threading.Thread):
                 user_to_modify = self.user_manager.find_user_by_username(name_modify)
                 if group_name in user.groups:
                     user_to_modify.groups[group_name] = (level_modify, user.groups[group_name][1])
+                    group_members[group_name] = (user_to_modify, user_to_modify.public_key)
                     print(f"Modified user {user_to_modify.username} access level to {level_modify} for group {group_name}")
         else:
             print(f"Unknown command {user_command}")
@@ -276,12 +279,12 @@ class ClientHandler(threading.Thread):
         user = self.user_manager.find_user_by_username(id)
         if user.access_level != 1:
             self.send_message("Not allowed")
-        elif group_name in groups:
+        elif group_name in groups_info:
             # Shouldn't be accepted
             self.send_message("exists")
         else:
             with group_lock:
-                groups[group_name] = (group_name, id)
+                groups_info[group_name] = (group_name, id)
                 # Sending a unique group port to this client
                 num_ports += 1
                 unique_group_port = p2p_port + num_ports
@@ -292,6 +295,7 @@ class ClientHandler(threading.Thread):
                 # Create the group with this certificate
                 certificate = cert_pem.decode() # convert to string
                 user.groups[group_name] = (1, certificate)  # Access level of admin
+                group_members[group_name] = (user, user.public_key)  # Adding username and their public key
                 # self.socket.sendall(cert_pem)
 
 
@@ -346,6 +350,7 @@ if __name__ == "__main__":
     user_manager = UserManager()
     user_handlers = {}
     user_handlers_lock = threading.Lock()
-    groups = {}
+    groups_info = {}  # Stores (group name, admin user id)
     group_lock = threading.Lock()
+    group_members = {}  # Stores (username, user public key)
     main()
