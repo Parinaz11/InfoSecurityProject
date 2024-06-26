@@ -189,7 +189,6 @@ class Client:
 
         # Receive a new unique port number in which the client listens on
         received = self.receive_message()
-        print("RECEIVED:", received)
         if received == "Not allowed":
             print("You are not allowed to create a group!")
         elif received == "exists":

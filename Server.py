@@ -164,7 +164,9 @@ class ClientHandler(threading.Thread):
 
     def handle_enter_groups(self):
         user_username = self.receive_message()
+        print("SENDING USERNAME")
         user = self.user_manager.find_user_by_username(user_username)
+        print("SENDING USER GROUPS:", user.groups)
         self.send_message(json.dumps(user.groups))
         user_command = self.receive_message()
 
@@ -283,6 +285,7 @@ class ClientHandler(threading.Thread):
                     print('ID, name: ' + decrypted_message.decode('utf-8'))  # "Received message:",
                     id = decrypted_message.decode('utf-8').split(',')[0]
                     group_name = decrypted_message.decode('utf-8').split(',')[1]
+                    print("ID IS", id, "AND GROUP NAME IS", group_name)
                 except (ValueError, TypeError) as e:
                     print("Signature verification failed.", str(e))
             else:
@@ -310,7 +313,12 @@ class ClientHandler(threading.Thread):
                 # Create the group with this certificate
                 certificate = cert_pem.decode() # convert to string
                 user.groups[group_name] = (1, certificate)  # Access level of admin
-                group_members[group_name].add((user.username, user.public_key))   # Adding username and their public key
+                if group_name in group_members:
+                    group_members[group_name].add((user.username, user.public_key))   # Adding username and their public key
+                else:
+                    group_members[group_name] = set()
+                    group_members[group_name].add((user.username, user.public_key))
+                    print("GROUP MEMBERS: ", group_members, type(group_members[group_name]))
                 # self.socket.sendall(cert_pem)
 
 
@@ -367,5 +375,5 @@ if __name__ == "__main__":
     user_handlers_lock = threading.Lock()
     groups_info = {}  # Stores (group name, admin user id, group port)
     group_lock = threading.Lock()
-    group_members = {}  # Stores tuple (username, user public key)
+    group_members = dict()  # Stores tuple (username, user public key)
     main()
