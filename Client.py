@@ -148,6 +148,7 @@ class Client:
             if access_level == 1:
                 member_ports_str = self.receive_message()
                 self.groups_member_ports[group_name] = set(map(int, member_ports_str.split(",")))
+                print("Member Ports:", self.groups_member_ports[group_name])
             self.p2p_chat(address, group_port)
         elif command == 2 and access_level == 1:
             name_add = input("Enter a username: ")
@@ -288,6 +289,34 @@ class Client:
             print(f"Connected to {addr}")
             threading.Thread(target=self.handle_group, args=(conn, group_name,)).start()  # handle_p2p_client(conn)
 
+    def p2p_chat_group(self, address, port, message):
+        recipient_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        recipient_socket.connect((address, port))
+
+        # Send the public key to the peer
+        recipient_socket.sendall(f"PUBLIC_KEY:{self.public_key.decode()}".encode())
+
+        if message is not None:
+            # Encrypt the message with AES
+            aes_key = get_random_bytes(16)
+            cipher_aes = AES.new(aes_key, AES.MODE_EAX)
+            ciphertext, tag = cipher_aes.encrypt_and_digest(message.encode('utf-8'))
+
+            # Compute HMAC
+            hmac = HMAC.new(aes_key, digestmod=SHA256)
+            hmac.update(ciphertext + tag)
+            hmac_tag = hmac.digest()
+
+            # Sign the concatenated nonce, AES key, ciphertext, and HMAC tag
+            data_to_sign = cipher_aes.nonce + aes_key + ciphertext + hmac_tag
+            h = SHA256.new(data_to_sign)
+            signature = pkcs1_15.new(self.key).sign(h)
+
+            final_message = f"{self.username}:{base64.b64encode(cipher_aes.nonce).decode()}:{base64.b64encode(aes_key).decode()}:{base64.b64encode(ciphertext).decode()}:{base64.b64encode(tag).decode()}:{base64.b64encode(hmac_tag).decode()}:{base64.b64encode(signature).decode()}"
+            recipient_socket.sendall(final_message.encode())
+
+        recipient_socket.close()
+
     def handle_group(self, conn, group_name):
         print("Connection:", conn)
         with conn:
@@ -330,12 +359,15 @@ class Client:
                                 final_message = decrypted_message.decode('utf-8')
                                 print(final_message)  # "Received message:",
 
+                                # When it receives a message, it should send it to everyone but itself
+                                print("group_member_ports:", self.groups_member_ports[group_name])
                                 member_ports = self.groups_member_ports[group_name]
                                 if member_ports:
                                     # If the set was not empty, send the message to ports
                                     for mp in member_ports:
                                         # Connect and Send the received message to this port
-                                        self.p2p_chat('localhost', mp, None, final_message)
+                                        print("Connecting and sending the message to port", mp)
+                                        self.p2p_chat_group('localhost', mp, final_message)
 
 
                             except (ValueError, TypeError) as e:
@@ -375,7 +407,7 @@ def handle_p2p_client(conn):
             elif message.startswith("CERT:"):
                 print("Received certificate:", message[5:])
             else:
-                print("Received", message)
+                # print("Received", message)
                 # Split the received data into components
                 parts = message.split(":")
                 if len(parts) == 7:

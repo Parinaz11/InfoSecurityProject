@@ -178,12 +178,11 @@ class ClientHandler(threading.Thread):
             self.send_message(str(groups_info[group_name][2]))
             # Send member ports of this group
             if user.access_level == 1:
-                # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! SENDS WRONG
-                # print("SENDING", str(group_members[group_name]))
                 ports = ''
                 for member in group_members[group_name]:
                     print("M is", member)
-                    u = self.user_manager.find_user_by_username(member)
+                    u = self.user_manager.find_user_by_username(member[0])
+                    print("ADDING PORT", u.p2p_port)
                     ports = ports + str(u.p2p_port) + ','
                 print("SENDING PORTS ", ports)
                 self.send_message(ports[:-1])  # Not sending the last character which is a comma
@@ -210,34 +209,6 @@ class ClientHandler(threading.Thread):
                     print(f"Modified user {user_to_modify.username} access level to {level_modify} for group {group_name}")
         else:
             print(f"Unknown command {user_command}")
-
-    # def handle_enter_groups(self):
-    #
-    #     # Receiving the user's id
-    #     user_username = self.receive_message()
-    #     user = self.user_manager.find_user_by_username(user_username)
-    #     # Serialize the dictionary to a JSON string and send it
-    #     print(f"SENDING to {user.username} groups {user.groups}")
-    #     self.send_message(json.dumps(user.groups))
-    #     # groups_json = json.dumps(user.groups)
-    #     # # Encode the JSON string to bytes and send it
-    #     # self.socket.sendall(groups_json.encode('utf-8'))
-    #
-    #     # Check user command
-    #     user_command = self.receive_message()
-    #     if user_command == "1":
-    #         group_name = self.receive_message()
-    #         print("User wants to connect to group", group_name)
-    #     elif user_command == "2":
-    #         add_info = self.receive_message().split(',') # Getting the name of the user who
-    #         name_add = add_info[0]
-    #         group_name = add_info[1]
-    #         with group_lock:
-    #             # Adding the group_name to the list of the user's groups
-    #             user_toadd = self.user_manager.find_user_by_username(name_add)
-    #             group_certificate = user.groups[group_name][1]
-    #             user_toadd.groups[group_name] = (0, group_certificate)
-    #             print(f"User with username {user_toadd.username} is {user_toadd.groups}")
 
     def handle_create_group_chat(self):
         global num_ports
@@ -318,7 +289,11 @@ class ClientHandler(threading.Thread):
                 else:
                     group_members[group_name] = set()
                     group_members[group_name].add((user.username, user.public_key))
-                    print("GROUP MEMBERS: ", group_members, type(group_members[group_name]))
+                    if not group_members[group_name]:
+                        print("The set is empty")
+                    # for gm in group_members[group_name]:
+                    #     print("GROUP MEMBER", gm)
+                    # print("GROUP MEMBERS: ", group_members)
                 # self.socket.sendall(cert_pem)
 
 
