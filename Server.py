@@ -15,8 +15,8 @@ from OpenSSL import crypto
 
 PORT = 12345
 HOST = 'localhost'
-p2p_port = 12346
-num_ports = 1
+general_p2p_port = 12346
+num_ports = 0
 passphrase = b'123'
 
 class User:
@@ -50,15 +50,14 @@ class UserManager:
         self.users.append(user)
         return True
 
-    def login_user(self, username, password, address, p2p_port):
+    def login_user(self, username, password, address):
         user = self.find_user_by_username(username)
         if user:
             hashed_input_password = self.hash_password(password, user.salt)
             if hashed_input_password == user.password_hash:
                 user.address = address
-                user.p2p_port = p2p_port
-                return True
-        return False
+                return user
+        return None
 
     def email_exists(self, email):
         for user in self.users:
@@ -130,23 +129,27 @@ class ClientHandler(threading.Thread):
 
     def handle_login(self):
         global num_ports
-        global p2p_port
+        global general_p2p_port
 
         self.username = self.receive_message()
         password = self.receive_message()
         address = self.socket.getpeername()[0]
-        # send a unique port number
-        num_ports += 1
-        unique_port = p2p_port + num_ports
-        self.send_message(str(unique_port))
-        # p2p_port = int(self.receive_message())
+        userCreated = self.user_manager.login_user(self.username, password, address)
 
-        success = self.user_manager.login_user(self.username, password, address, unique_port)
-        self.send_message("Login successful!" if success else "Login failed!")
+        if userCreated is not None:
+            self.send_message("Login successful!")
+            # send a unique port number
+            num_ports += 1
+            unique_port = general_p2p_port + num_ports
+            userCreated.p2p_port = unique_port
 
-        if success:
+            self.send_message(str(unique_port))
             with user_handlers_lock:
                 user_handlers[self.username] = self
+            # p2p_port = int(self.receive_message())
+        else:
+            self.send_message("Login failed!")
+
 
     def handle_private_chat_request(self):
         recipient_username = self.receive_message()
@@ -163,10 +166,9 @@ class ClientHandler(threading.Thread):
                 return g
 
     def handle_enter_groups(self):
-        user_username = self.receive_message()
-        print("SENDING USERNAME")
-        user = self.user_manager.find_user_by_username(user_username)
-        print("SENDING USER GROUPS:", user.groups)
+        # user_username = self.receive_message()
+        user = self.user_manager.find_user_by_username(self.username)
+        # print("SENDING USER GROUPS:", user.groups)
         self.send_message(json.dumps(user.groups))
         user_command = self.receive_message()
 
@@ -174,8 +176,8 @@ class ClientHandler(threading.Thread):
             group_name = self.receive_message()
             print(f"User {user.username} wants to connect to group {group_name}")
             # Send the port number of that group to the user
-            print("Send port number ", str(groups_info[group_name][2]))
-            self.send_message(str(groups_info[group_name][2]))
+            print("Send port number ", str(groups_info[group_name][1]))
+            self.send_message(str(groups_info[group_name][1]))
             # Send member ports of this group
             if user.access_level == 1:
                 ports = ''
@@ -186,17 +188,20 @@ class ClientHandler(threading.Thread):
                     ports = ports + str(u.p2p_port) + ','
                 print("SENDING PORTS ", ports)
                 self.send_message(ports[:-1])  # Not sending the last character which is a comma
+
         elif user_command == "2":
             add_info = self.receive_message().split(',')
             name_add, group_name = add_info[0], add_info[1]
-
             with group_lock:
                 user_to_add = self.user_manager.find_user_by_username(name_add)
                 group_certificate = user.groups[group_name][1]
                 user_to_add.groups[group_name] = (0, group_certificate)
+                # Add the user's public key to the dict
                 group_members[group_name].add((user_to_add.username, user_to_add.public_key)) # Add a set
                 print("Group members now is:", group_members[group_name])
                 print(f"Added user {user_to_add.username} to group {group_name}")
+            return
+
         elif user_command == "3":
             modify_info = self.receive_message().split(',')
             name_modify, level_modify, group_name = modify_info[0], int(modify_info[1]), modify_info[2]
@@ -211,8 +216,9 @@ class ClientHandler(threading.Thread):
             print(f"Unknown command {user_command}")
 
     def handle_create_group_chat(self):
+        # Create a group and become admin
         global num_ports
-        global p2p_port
+        global general_p2p_port
 
         # Receive public key of the user
         receive_key = self.receive_message()
@@ -220,8 +226,7 @@ class ClientHandler(threading.Thread):
         if receive_key.startswith("PUBLIC_KEY:"):
             # Receive and set the user's public key
             user_public_key_pem = receive_key.split("PUBLIC_KEY:")[1]
-            user_public_key = user_public_key_pem.encode()
-            pk = user_public_key
+            pk = user_public_key_pem.encode()
 
         id = None
         group_name = None
@@ -253,10 +258,9 @@ class ClientHandler(threading.Thread):
                     # Decrypt the message
                     cipher_aes = AES.new(aes_key, AES.MODE_EAX, nonce=nonce)
                     decrypted_message = cipher_aes.decrypt_and_verify(ciphertext, tag)
-                    print('ID, name: ' + decrypted_message.decode('utf-8'))  # "Received message:",
                     id = decrypted_message.decode('utf-8').split(',')[0]
                     group_name = decrypted_message.decode('utf-8').split(',')[1]
-                    print("ID IS", id, "AND GROUP NAME IS", group_name)
+                    print("User", id, "request to create group named", group_name)
                 except (ValueError, TypeError) as e:
                     print("Signature verification failed.", str(e))
             else:
@@ -264,7 +268,6 @@ class ClientHandler(threading.Thread):
         else:
             print("Received message format is incorrect.")
 
-        # group_name = self.receive_message()
         user = self.user_manager.find_user_by_username(id)
         if user.access_level != 1:
             self.send_message("Not allowed")
@@ -275,26 +278,18 @@ class ClientHandler(threading.Thread):
             with group_lock:
                 # Sending a unique group port to this client
                 num_ports += 1
-                unique_group_port = p2p_port + num_ports
-                groups_info[group_name] = (group_name, id, unique_group_port)
-                self.send_message(str(unique_group_port))
+                unique_group_port = general_p2p_port + num_ports
+                groups_info[group_name] = (id, unique_group_port)
+                self.send_message(str(unique_group_port))  # So that the admin user listens on it
                 # Create and send a certificate for this user
                 cert_pem = generate_certificate(pk, user.username)
-                print(f"Generated Certificate: {cert_pem}")
+                # print(f"Generated Certificate: {cert_pem}")
                 # Create the group with this certificate
                 certificate = cert_pem.decode() # convert to string
                 user.groups[group_name] = (1, certificate)  # Access level of admin
-                if group_name in group_members:
-                    group_members[group_name].add((user.username, user.public_key))   # Adding username and their public key
-                else:
-                    group_members[group_name] = set()
-                    group_members[group_name].add((user.username, user.public_key))
-                    if not group_members[group_name]:
-                        print("The set is empty")
-                    # for gm in group_members[group_name]:
-                    #     print("GROUP MEMBER", gm)
-                    # print("GROUP MEMBERS: ", group_members)
-                # self.socket.sendall(cert_pem)
+                # Add the group admin as the member of the group
+                group_members[group_name] = set()
+                group_members[group_name].add((user.username, user.public_key))
 
 
 # Function to create a certificate using the user's public key
@@ -348,7 +343,7 @@ if __name__ == "__main__":
     user_manager = UserManager()
     user_handlers = {}
     user_handlers_lock = threading.Lock()
-    groups_info = {}  # Stores (group name, admin user id, group port)
+    groups_info = {}  # group_name : (admin_user, unique_group_port)
     group_lock = threading.Lock()
-    group_members = dict()  # Stores tuple (username, user public key)
+    group_members = dict()  # group_name : ((user.username, user.public_key),(),..)
     main()

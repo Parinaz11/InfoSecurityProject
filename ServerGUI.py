@@ -11,7 +11,7 @@ from Crypto.Cipher import AES
 from Crypto.Hash import SHA256, HMAC
 from Crypto.Signature import pkcs1_15
 from Crypto.PublicKey import RSA
-# from OpenSSL import  crypto
+from OpenSSL import  crypto
 
 PORT = 12345
 HOST = 'localhost'

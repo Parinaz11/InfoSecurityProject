@@ -13,6 +13,7 @@ HOST = 'localhost'
 PORT = 12345
 P2P_PORT = 12346
 peer_public_key = None
+firstPVChat_flag = True
 
 class Client:
     def __init__(self):
@@ -51,7 +52,6 @@ class Client:
                     self.private_chat()
                 elif choice == "5":
                     self.enter_group_chat()
-                    print("Working on enter group chat...")
                 elif choice == "6" and self.access_level == 1:
                     self.create_group_chat()
                 else:
@@ -90,16 +90,19 @@ class Client:
         password = input("Enter your password: ")
         self.send_message(password)
         # Get the p2p port number which is unique
+        response = self.receive_message()
+        print(response)
+        if response == "Login failed!":
+            return
         P2P_PORT = int(self.receive_message())
         p2p_thread = threading.Thread(target=start_p2p_server, daemon=True)
         p2p_thread.start()
         # self.send_message(str(P2P_PORT))
-        print(self.receive_message())
 
     def enter_group_chat(self):
         self.send_message("EnterGroups")
         print("--- Your Groups ---")
-        self.send_message(self.username)
+        # self.send_message(self.username)
         try:
             # Receive the JSON-encoded groups dictionary
             groups_json = self.socket.recv(4096).decode('utf-8')
@@ -144,12 +147,12 @@ class Client:
             group_port = int(self.receive_message())
             print("Received group port", group_port)
             address = 'localhost'
-            # Getting this group's user ports from server so that every message is sent to others
+            # admin: Getting this group's user ports from server so that every message is sent to others
             if access_level == 1:
                 member_ports_str = self.receive_message()
                 self.groups_member_ports[group_name] = set(map(int, member_ports_str.split(",")))
                 print("Member Ports:", self.groups_member_ports[group_name])
-            self.p2p_chat(address, group_port)
+            self.p2p_chat_group(address, group_port)
         elif command == 2 and access_level == 1:
             name_add = input("Enter a username: ")
             self.send_message(f"{name_add},{group_name}")
@@ -171,7 +174,7 @@ class Client:
         self.send_message(f"PUBLIC_KEY:{self.public_key.decode()}")
         group_name = input("Enter group name: ")
 
-        # Sing the username before sending
+        # Sign the username before sending
         message = self.username + ',' + group_name
         # Encrypt the message with AES
         aes_key = get_random_bytes(16)
@@ -191,16 +194,16 @@ class Client:
         # Receive a new unique port number in which the client listens on
         received = self.receive_message()
         if received == "Not allowed":
-            print("You are not allowed to create a group!")
+            print("You are not allowed to create a group! (access level = 0)")
         elif received == "exists":
             print("Group name already taken. Please choose another.")
         else:
             group_port = int(received)
-            print("Group port received:", group_port)
+            print("Admin group port received to listen on:", group_port)
             # certificate = self.socket.recv(4096)
             # print("CERT:", str(certificate))
-            p2p_thread = threading.Thread(target=self.start_group_server, args=(group_port,group_name), daemon=True) # ,certificate
-            p2p_thread.start()
+            admin_thread = threading.Thread(target=self.start_group_server, args=(group_port, group_name,), daemon=True) # ,certificate
+            admin_thread.start()
 
     def private_chat(self, group_certificate=None, recipient_username=None):
         self.send_message("privateChat")
@@ -209,26 +212,30 @@ class Client:
         self.send_message(recipient_username)
 
         p2p_info_confirm = self.receive_message()
-        if p2p_info_confirm.startswith("P2P_INFO"):
+        if p2p_info_confirm == "P2P_INFO":
             p2p_info = self.receive_message()
-            print('P2P info', p2p_info)
+            print('P2P info', p2p_info)  # Connect the port which the other client is listening
             address, port = p2p_info.split(":")
             self.p2p_chat(address, int(port), group_certificate)
         else:
             print("Failed to initiate private chat:", p2p_info_confirm)
 
     def p2p_chat(self, address, port, group_certificate=None, message=None):
+        # Connect to this user's port and start chat
+        global firstPVChat_flag
         recipient_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         recipient_socket.connect((address, port))
 
         # Send the public key to the peer
-        recipient_socket.sendall(f"PUBLIC_KEY:{self.public_key.decode()}".encode())
+        if firstPVChat_flag:
+            recipient_socket.sendall(f"PUBLIC_KEY:{self.public_key.decode()}".encode())
+            firstPVChat_flag = False
 
         if group_certificate is not None:
             message = "CERT:" + group_certificate
             recipient_socket.sendall(message.encode('utf-8'))
             print("Group certificate sent as", message)
-        if message is not None:
+        if message is not None:  # message for group
             message = f"*{self.username}*: " + message
             # Encrypt the message with AES
             aes_key = get_random_bytes(16)
@@ -274,6 +281,7 @@ class Client:
 
                 print("Message sent.")
 
+        firstPVChat_flag = True
         recipient_socket.close()
 
     def start_group_server(self, group_port, group_name):  # , certificate
@@ -282,6 +290,7 @@ class Client:
         group_socket.listen(1)
         print(f"Group server listening on port {group_port}")
         # groups[group_name] = (1,certificate) # Access level of admin
+        # The admin keeps the member's ports for each group
         self.groups_member_ports[group_name] = set()
 
         while True:
@@ -289,14 +298,24 @@ class Client:
             print(f"Connected to {addr}")
             threading.Thread(target=self.handle_group, args=(conn, group_name,)).start()  # handle_p2p_client(conn)
 
-    def p2p_chat_group(self, address, port, message):
+    def p2p_chat_group(self, address, port):
+
+        # Connect to this user's port and start chat
+        global firstPVChat_flag
         recipient_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         recipient_socket.connect((address, port))
 
         # Send the public key to the peer
-        recipient_socket.sendall(f"PUBLIC_KEY:{self.public_key.decode()}".encode())
+        if firstPVChat_flag:
+            recipient_socket.sendall(f"PUBLIC_KEY:{self.username}:{self.public_key.decode()}".encode())
+            firstPVChat_flag = False
 
-        if message is not None:
+        print("Start typing your messages (type 'exit' to end chat):")
+        while True:
+            message = input()
+            if message == "exit":
+                break
+            message = f"*{self.username}*: " + message
             # Encrypt the message with AES
             aes_key = get_random_bytes(16)
             cipher_aes = AES.new(aes_key, AES.MODE_EAX)
@@ -315,9 +334,44 @@ class Client:
             final_message = f"{self.username}:{base64.b64encode(cipher_aes.nonce).decode()}:{base64.b64encode(aes_key).decode()}:{base64.b64encode(ciphertext).decode()}:{base64.b64encode(tag).decode()}:{base64.b64encode(hmac_tag).decode()}:{base64.b64encode(signature).decode()}"
             recipient_socket.sendall(final_message.encode())
 
+            print("Message sent.")
+
+        firstPVChat_flag = True
         recipient_socket.close()
 
+
+        # global firstPVChat_flag
+        # recipient_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # recipient_socket.connect((address, port))
+        #
+        # # Send the public key to the peer
+        # if firstPVChat_flag:
+        #     recipient_socket.sendall(f"PUBLIC_KEY:{self.public_key.decode()}".encode())
+        #     firstPVChat_flag = False
+        #
+        # # Encrypt the message with AES
+        # aes_key = get_random_bytes(16)
+        # cipher_aes = AES.new(aes_key, AES.MODE_EAX)
+        # ciphertext, tag = cipher_aes.encrypt_and_digest(message.encode('utf-8'))
+        #
+        # # Compute HMAC
+        # hmac = HMAC.new(aes_key, digestmod=SHA256)
+        # hmac.update(ciphertext + tag)
+        # hmac_tag = hmac.digest()
+        #
+        # # Sign the concatenated nonce, AES key, ciphertext, and HMAC tag
+        # data_to_sign = cipher_aes.nonce + aes_key + ciphertext + hmac_tag
+        # h = SHA256.new(data_to_sign)
+        # signature = pkcs1_15.new(self.key).sign(h)
+        #
+        # final_message = f"{self.username}:{base64.b64encode(cipher_aes.nonce).decode()}:{base64.b64encode(aes_key).decode()}:{base64.b64encode(ciphertext).decode()}:{base64.b64encode(tag).decode()}:{base64.b64encode(hmac_tag).decode()}:{base64.b64encode(signature).decode()}"
+        # recipient_socket.sendall(final_message.encode())
+        #
+        # recipient_socket.close()
+        # firstPVChat_flag = True
+
     def handle_group(self, conn, group_name):
+        global peer_public_key
         print("Connection:", conn)
         with conn:
             while True:
@@ -327,7 +381,10 @@ class Client:
                 message = data.decode()
                 if message.startswith("PUBLIC_KEY:"):
                     # Receive and set the peer's public key
-                    peer_public_key_pem = message.split("PUBLIC_KEY:")[1]
+                    # GET THE PUBLIC KEY OF THIS USER WITH THE MEMBER TABLE IN SERVER !!!!!!!!!!!!!!!11
+                    # AFTER THAT USE THAT PUBLIC KEY TO DO THE REST
+
+                    peer_public_key_pem = message.split(":")[2]
                     peer_public_key = peer_public_key_pem.encode()
                     print("Received peer's public key.")
                 else:
@@ -362,12 +419,11 @@ class Client:
                                 # When it receives a message, it should send it to everyone but itself
                                 print("group_member_ports:", self.groups_member_ports[group_name])
                                 member_ports = self.groups_member_ports[group_name]
-                                if member_ports:
-                                    # If the set was not empty, send the message to ports
-                                    for mp in member_ports:
-                                        # Connect and Send the received message to this port
+                                # If the set was not empty, send the message to ports
+                                for mp in member_ports:
+                                    if mp != P2P_PORT: # Connect and Send the received message to this port
                                         print("Connecting and sending the message to port", mp)
-                                        self.p2p_chat_group('localhost', mp, final_message)
+                                        self.p2p_chat('localhost', mp, final_message)
 
 
                             except (ValueError, TypeError) as e:

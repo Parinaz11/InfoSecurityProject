@@ -1,3 +1,479 @@
+# import json
+# import socket
+# import threading
+# import base64
+#
+# import tkinter as tk
+# from tkinter import scrolledtext, messagebox
+# from tkinter import ttk  # For modern widgets
+#
+# from Crypto.Hash import SHA256, HMAC
+# from Crypto.PublicKey import RSA
+# from Crypto.Cipher import PKCS1_OAEP, AES
+# from Crypto.Random import get_random_bytes
+# from Crypto.Signature import pkcs1_15
+#
+# HOST = 'localhost'
+# PORT = 12345
+# P2P_PORT = 12346
+# peer_public_key = None
+#
+# class Client:
+#     message_display = None
+#     chat_window = None
+#
+#     def __init__(self):
+#         global peer_public_key
+#         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+#         self.socket.connect((HOST, PORT))
+#         self.username = None
+#         self.key = RSA.generate(2048)
+#         self.public_key = self.key.publickey().export_key()
+#         self.access_level = 1
+#         self.groups_member_ports = dict()
+#         self.init_gui()
+#
+#     def run(self):
+#         try:
+#             while True:
+#                 print("1. Register")
+#                 print("2. Login")
+#                 print("3. Exit")
+#                 print("4. Private Chat")
+#                 print("5. Group Chats")
+#                 if self.access_level == 1:
+#                     print("6. Create Group Chat")
+#
+#                 choice = input("Enter your choice: ")
+#
+#                 if choice == "1":
+#                     self.register_user()
+#                 elif choice == "2":
+#                     self.login_user()
+#                 elif choice == "3":
+#                     print("Exiting...")
+#                     break
+#                 elif choice == "4":
+#                     self.private_chat()
+#                 elif choice == "5":
+#                     self.enter_group_chat()
+#                     print("Working on enter group chat...")
+#                 elif choice == "6" and self.access_level == 1:
+#                     self.create_group_chat()
+#                 else:
+#                     print("Invalid choice!")
+#
+#         except Exception as e:
+#             print("Client exception:", str(e))
+#
+#     def init_gui(self):
+#         self.root = tk.Tk()
+#         self.root.title("P2P Chat Client")
+#         self.root.geometry("400x300")
+#         self.root.configure(bg="#f0f0f0")
+#         self.style = ttk.Style()
+#         self.style.configure("TButton", padding=6, relief="flat", background="#ccc")
+#         self.show_main_menu()
+#         self.root.mainloop()
+#
+#     def show_main_menu(self):
+#         for widget in self.root.winfo_children():
+#             widget.destroy()
+#
+#         frame = tk.Frame(self.root, bg="#f0f0f0")
+#         frame.pack(expand=True)
+#
+#         tk.Label(frame, text="P2P Chat Client", font=("Arial", 16, "bold"), bg="#f0f0f0").pack(pady=20)
+#         ttk.Button(frame, text="Register", command=self.show_register).pack(pady=10)
+#         ttk.Button(frame, text="Login", command=self.show_login).pack(pady=10)
+#         ttk.Button(frame, text="Exit", command=self.root.quit).pack(pady=10)
+#
+#     def show_loggedin_menu(self):
+#         for widget in self.root.winfo_children():
+#             widget.destroy()
+#
+#         frame = tk.Frame(self.root, bg="#f0f0f0")
+#         frame.pack(expand=True)
+#
+#         tk.Label(frame, text=f"Welcome, {self.username}", font=("Arial", 16, "bold"), bg="#f0f0f0").pack(pady=10)
+#         ttk.Button(frame, text="P2P chat", command=self.show_p2pchat).pack(pady=10)
+#
+#     def show_register(self):
+#         for widget in self.root.winfo_children():
+#             widget.destroy()
+#
+#         frame = tk.Frame(self.root, bg="#f0f0f0")
+#         frame.pack(expand=True)
+#
+#         tk.Label(frame, text="Register", font=("Arial", 16, "bold"), bg="#f0f0f0").pack(pady=20)
+#
+#         tk.Label(frame, text="Email", bg="#f0f0f0").pack(pady=5)
+#         self.email_entry = tk.Entry(frame)
+#         self.email_entry.pack(pady=5)
+#
+#         tk.Label(frame, text="Username", bg="#f0f0f0").pack(pady=5)
+#         self.username_entry = tk.Entry(frame)
+#         self.username_entry.pack(pady=5)
+#
+#         tk.Label(frame, text="Password", bg="#f0f0f0").pack(pady=5)
+#         self.password_entry = tk.Entry(frame, show="*")
+#         self.password_entry.pack(pady=5)
+#
+#         tk.Label(frame, text="Confirm Password", bg="#f0f0f0").pack(pady=5)
+#         self.confirm_password_entry = tk.Entry(frame, show="*")
+#         self.confirm_password_entry.pack(pady=5)
+#
+#         def register_user():
+#             self.send_message("register")
+#             self.send_message(self.email_entry.get())
+#             self.send_message(self.username_entry.get())
+#             self.send_message(self.password_entry.get())
+#             self.send_message(self.confirm_password_entry.get())
+#             self.send_message(self.public_key.decode())
+#             messagebox.showinfo("Info", self.receive_message())
+#             self.show_main_menu()
+#
+#         ttk.Button(frame, text="Submit", command=register_user).pack(pady=20)
+#         ttk.Button(frame, text="Back", command=self.show_main_menu).pack(pady=10)
+#
+#     def send_message(self, message):
+#         self.socket.sendall(message.encode())
+#
+#     def receive_message(self):
+#         return self.socket.recv(1024).decode()
+#
+#     def show_login(self):
+#         for widget in self.root.winfo_children():
+#             widget.destroy()
+#
+#         frame = tk.Frame(self.root, bg="#f0f0f0")
+#         frame.pack(expand=True)
+#
+#         tk.Label(frame, text="Login", font=("Arial", 16, "bold"), bg="#f0f0f0").pack(pady=20)
+#
+#         tk.Label(frame, text="Username", bg="#f0f0f0").pack(pady=5)
+#         username_entry = tk.Entry(frame)
+#         username_entry.pack(pady=5)
+#
+#         tk.Label(frame, text="Password", bg="#f0f0f0").pack(pady=5)
+#         password_entry = tk.Entry(frame, show="*")
+#         password_entry.pack(pady=5)
+#
+#         def login_user():
+#             global P2P_PORT
+#
+#             self.send_message("login")
+#             self.username = username_entry.get()
+#             self.send_message(self.username)
+#             self.send_message(password_entry.get())
+#             P2P_PORT = int(self.receive_message())
+#             p2p_thread = threading.Thread(target=start_p2p_server, args=(self,), daemon=True)
+#             p2p_thread.start()
+#             messagebox.showinfo("Info", self.receive_message())
+#             self.show_loggedin_menu()
+#
+#         ttk.Button(frame, text="Login", command=login_user).pack(pady=20)
+#         ttk.Button(frame, text="Back", command=self.show_main_menu).pack(pady=10)
+#
+#     def enter_group_chat(self):
+#         self.send_message("EnterGroups")
+#         print("--- Your Groups ---")
+#         self.send_message(self.username)
+#         try:
+#             groups_json = self.socket.recv(4096).decode('utf-8')
+#             groups = json.loads(groups_json)
+#         except (json.JSONDecodeError, KeyError):
+#             print("Failed to decode groups data")
+#             return
+#
+#         if not groups:
+#             print("No groups found")
+#             return
+#
+#         for group, details in groups.items():
+#             print(f'{group} (access level {details[0]})')
+#
+#         group_name = input("Enter the group name: ")
+#
+#         if group_name not in groups:
+#             print("Group does not exist")
+#             return
+#
+#         print("1. Enter group")
+#         access_level = groups[group_name][0]
+#
+#         if access_level == 1:
+#             print("2. Add to group")
+#             print("3. Modify user access levels")
+#
+#         try:
+#             command = int(input("Enter your choice: "))
+#         except ValueError:
+#             print("Invalid input")
+#             return
+#
+#         self.send_message(str(command))
+#
+#         if command == 1:
+#             self.send_message(group_name)
+#             group_port = int(self.receive_message())
+#             print("Received group port", group_port)
+#             address = 'localhost'
+#             if access_level == 1:
+#                 member_ports_str = self.receive_message()
+#                 self.groups_member_ports[group_name] = set(map(int, member_ports_str.split(",")))
+#             self.p2p_chat(address, group_port)
+#         elif command == 2 and access_level == 1:
+#             name_add = input("Enter a username: ")
+#             self.send_message(f"{name_add},{group_name}")
+#             self.private_chat(groups[group_name][1], name_add)
+#             print(f"Added {name_add} to {group_name}")
+#         elif command == 3 and access_level == 1:
+#             name_modify = input("Enter a username: ")
+#             level_modify = input("Enter an access level (0/1): ")
+#             self.send_message(f"{name_modify},{level_modify},{group_name}")
+#             print(f"User {name_modify} with access level {level_modify} for group {group_name}")
+#         else:
+#             print("Invalid command or insufficient access level")
+#
+#     def create_group_chat(self):
+#         self.send_message("CreatingGroupChat")
+#         self.send_message(f"PUBLIC_KEY:{self.public_key.decode()}")
+#         group_name = input("Enter group name: ")
+#         message = self.username + ',' + group_name
+#         aes_key = get_random_bytes(16)
+#         cipher_aes = AES.new(aes_key, AES.MODE_EAX)
+#         ciphertext, tag = cipher_aes.encrypt_and_digest(message.encode('utf-8'))
+#         hmac = HMAC.new(aes_key, digestmod=SHA256)
+#         hmac.update(ciphertext + tag)
+#         hmac_tag = hmac.digest()
+#         data_to_sign = cipher_aes.nonce + aes_key + ciphertext + hmac_tag
+#         h = SHA256.new(data_to_sign)
+#         signature = pkcs1_15.new(self.key).sign(h)
+#         final_message = f"{self.username}:{base64.b64encode(cipher_aes.nonce).decode()}:{base64.b64encode(aes_key).decode()}:{base64.b64encode(ciphertext).decode()}:{base64.b64encode(tag).decode()}:{base64.b64encode(hmac_tag).decode()}:{base64.b64encode(signature).decode()}"
+#         self.send_message(final_message)
+#         received = self.receive_message()
+#         print("RECEIVED:", received)
+#         if received == "Not allowed":
+#             print("You are not allowed to create a group!")
+#         elif received == "exists":
+#             print("Group name already taken. Please choose another.")
+#         else:
+#             group_port = int(received)
+#             print("Group port received:", group_port)
+#             p2p_thread = threading.Thread(target=self.start_group_server, args=(group_port, group_name), daemon=True)
+#             p2p_thread.start()
+#
+#     def show_p2pchat(self):
+#         for widget in self.root.winfo_children():
+#             widget.destroy()
+#
+#         frame = tk.Frame(self.root, bg="#f0f0f0")
+#         frame.pack(expand=True)
+#
+#         tk.Label(frame, text="Enter recipient username", bg="#f0f0f0").pack(pady=5)
+#         recipient_username = tk.Entry(frame)
+#         recipient_username.pack(pady=5)
+#         ttk.Button(frame, text="Done", command=lambda: self.private_chat(recipient_username=recipient_username.get())).pack(pady=20)
+#
+#     def private_chat(self, group_certificate=None, recipient_username=None):
+#         self.send_message("privateChat")
+#         self.send_message(recipient_username)
+#         p2p_info_confirm = self.receive_message()
+#         if p2p_info_confirm.startswith("P2P_INFO"):
+#             p2p_info = self.receive_message()
+#             address, port = p2p_info.split(":")
+#             self.p2p_chat(address, int(port), group_certificate)
+#         else:
+#             print("Failed to initiate private chat:", p2p_info_confirm)
+#
+#     def p2p_chat(self, address, port, group_certificate=None, message=None):
+#         recipient_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+#         recipient_socket.connect((address, port))
+#
+#         recipient_socket.sendall(f"PUBLIC_KEY:{self.public_key.decode()}".encode())
+#
+#         self.chat_window = tk.Toplevel(self.root)
+#         self.chat_window.title("P2P Chat")
+#
+#         self.message_display = scrolledtext.ScrolledText(self.chat_window, wrap=tk.WORD, height=15, width=60)
+#         self.message_display.pack(pady=10)
+#         self.message_display.config(state=tk.DISABLED)
+#
+#         self.message_entry = tk.Text(self.chat_window, wrap=tk.WORD, height=2, width=60)
+#         self.message_entry.pack(pady=10)
+#         self.message_entry.bind("<Return>", lambda event: self.send_msg(message, recipient_socket, group_certificate))
+#
+#         self.send_button = ttk.Button(self.chat_window, text="Send", command=lambda: self.send_msg(message, recipient_socket, group_certificate))
+#         self.send_button.pack(pady=10)
+#
+#         tk.Button(self.root, text="Back", command=lambda: self.show_loggedin_menu()).pack(pady=10)
+#         self.message_label = tk.Label(self.chat_window, text="")
+#         self.message_label.pack(pady=10)
+#
+#     def send_msg(self, message, recipient_socket, group_certificate):
+#         message = self.message_entry.get("1.0", tk.END.strip())
+#         if message:
+#             self.message_entry.delete("1.0", tk.END)
+#             self.message_label.config(text=f"Sent: {message}")
+#
+#             self.message_display.config(state=tk.NORMAL)
+#             self.message_display.insert(tk.END, f"Me: {message}\n")
+#             self.message_display.config(state=tk.DISABLED)
+#
+#             message = f"*{self.username}*: " + message
+#             aes_key = get_random_bytes(16)
+#             cipher_aes = AES.new(aes_key, AES.MODE_EAX)
+#             ciphertext, tag = cipher_aes.encrypt_and_digest(message.encode('utf-8'))
+#             hmac = HMAC.new(aes_key, digestmod=SHA256)
+#             hmac.update(ciphertext + tag)
+#             hmac_tag = hmac.digest()
+#             data_to_sign = cipher_aes.nonce + aes_key + ciphertext + hmac_tag
+#             h = SHA256.new(data_to_sign)
+#             signature = pkcs1_15.new(self.key).sign(h)
+#             final_message = f"{self.username}:{base64.b64encode(cipher_aes.nonce).decode()}:{base64.b64encode(aes_key).decode()}:{base64.b64encode(ciphertext).decode()}:{base64.b64encode(tag).decode()}:{base64.b64encode(hmac_tag).decode()}:{base64.b64encode(signature).decode()}"
+#             recipient_socket.sendall(final_message.encode())
+#
+#     def start_group_server(self, group_port, group_name):
+#         group_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+#         group_socket.bind((HOST, group_port))
+#         group_socket.listen(1)
+#         print(f"Group server listening on port {group_port}")
+#         self.groups_member_ports[group_name] = set()
+#
+#         while True:
+#             conn, addr = group_socket.accept()
+#             print(f"Connected to {addr}")
+#             threading.Thread(target=self.handle_group, args=(conn, group_name,)).start()
+#
+#     def handle_group(self, conn, group_name):
+#         global peer_public_key
+#         with conn:
+#             while True:
+#                 data = conn.recv(1024)
+#                 if not data:
+#                     break
+#                 message = data.decode()
+#                 if message.startswith("PUBLIC_KEY:"):
+#                     peer_public_key_pem = message.split("PUBLIC_KEY:")[1]
+#                     peer_public_key = peer_public_key_pem.encode()
+#                     print("Received peer's public key.")
+#                 else:
+#                     parts = message.split(":")
+#                     if len(parts) == 7:
+#                         sender_username, nonce, aes_key, ciphertext, tag, hmac_tag, signed_message = parts
+#                         nonce = base64.b64decode(nonce)
+#                         aes_key = base64.b64decode(aes_key)
+#                         ciphertext = base64.b64decode(ciphertext)
+#                         tag = base64.b64decode(tag)
+#                         hmac_tag = base64.b64decode(hmac_tag)
+#                         signature = base64.b64decode(signed_message)
+#                         if peer_public_key:
+#                             peer_rsa_key = RSA.import_key(peer_public_key)
+#                             data_to_verify = nonce + aes_key + ciphertext + hmac_tag
+#                             h = SHA256.new(data_to_verify)
+#                             try:
+#                                 pkcs1_15.new(peer_rsa_key).verify(h, signature)
+#                                 hmac = HMAC.new(aes_key, digestmod=SHA256)
+#                                 hmac.update(ciphertext + tag)
+#                                 hmac.verify(hmac_tag)
+#                                 cipher_aes = AES.new(aes_key, AES.MODE_EAX, nonce=nonce)
+#                                 decrypted_message = cipher_aes.decrypt_and_verify(ciphertext, tag)
+#                                 final_message = decrypted_message.decode('utf-8')
+#                                 print(final_message)
+#                                 member_ports = self.groups_member_ports[group_name]
+#                                 if member_ports:
+#                                     for mp in member_ports:
+#                                         self.p2p_chat('localhost', mp, None, final_message)
+#                             except (ValueError, TypeError) as e:
+#                                 print("Signature verification failed.", str(e))
+#                         else:
+#                             print("Peer public key not received. Cannot verify message.")
+#                     else:
+#                         print("Received message format is incorrect.")
+#
+#
+# def start_p2p_server(client):
+#     p2p_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+#     p2p_socket.bind((HOST, P2P_PORT))
+#     p2p_socket.listen(1)
+#     print(f"P2P server listening on port {P2P_PORT}")
+#
+#     while True:
+#         conn, addr = p2p_socket.accept()
+#         print(f"Connected to {addr}")
+#         threading.Thread(target=handle_p2p_client, args=(conn, client)).start()
+#
+#
+# def handle_p2p_client(conn, client):
+#     global peer_public_key
+#     with conn:
+#         while True:
+#             data = conn.recv(1024)
+#             if not data:
+#                 break
+#             message = data.decode()
+#             if message.startswith("PUBLIC_KEY:"):
+#                 peer_public_key_pem = message.split("PUBLIC_KEY:")[1]
+#                 peer_public_key = peer_public_key_pem.encode()
+#                 print("Received peer's public key.")
+#             elif message.startswith("CERT:"):
+#                 print("Received certificate:", message[5:])
+#             else:
+#                 parts = message.split(":")
+#                 if len(parts) == 7:
+#                     sender_username, nonce, aes_key, ciphertext, tag, hmac_tag, signed_message = parts
+#                     nonce = base64.b64decode(nonce)
+#                     aes_key = base64.b64decode(aes_key)
+#                     ciphertext = base64.b64decode(ciphertext)
+#                     tag = base64.b64decode(tag)
+#                     hmac_tag = base64.b64decode(hmac_tag)
+#                     signature = base64.b64decode(signed_message)
+#                     if peer_public_key:
+#                         peer_rsa_key = RSA.import_key(peer_public_key)
+#                         data_to_verify = nonce + aes_key + ciphertext + hmac_tag
+#                         h = SHA256.new(data_to_verify)
+#                         try:
+#                             pkcs1_15.new(peer_rsa_key).verify(h, signature)
+#                             print("Signature is valid.")
+#                             hmac = HMAC.new(aes_key, digestmod=SHA256)
+#                             hmac.update(ciphertext + tag)
+#                             hmac.verify(hmac_tag)
+#                             cipher_aes = AES.new(aes_key, AES.MODE_EAX, nonce=nonce)
+#                             decrypted_message = cipher_aes.decrypt_and_verify(ciphertext, tag)
+#                             final_msg = decrypted_message.decode('utf-8')
+#                             print(final_msg)
+#                             if client.message_display is None:
+#                                 client.chat_window = tk.Toplevel(client.root)
+#                                 client.chat_window.title("P2P Chat")
+#                                 client.message_display = scrolledtext.ScrolledText(client.chat_window, wrap=tk.WORD, height=15, width=60)
+#                                 client.message_display.pack(pady=10)
+#                                 client.message_display.insert(tk.END, f"{sender_username}: {final_msg}")
+#                                 client.message_display.config(state=tk.DISABLED)
+#                             else:
+#                                 client.message_display.config(state=tk.NORMAL)
+#                                 client.message_display.insert(tk.END, f"{sender_username}: {final_msg}")
+#                                 client.message_display.config(state=tk.DISABLED)
+#                         except (ValueError, TypeError) as e:
+#                             print("Signature verification failed.", str(e))
+#                     else:
+#                         print("Peer public key not received. Cannot verify message.")
+#                 else:
+#                     print("Received message format is incorrect.")
+#
+#
+# def main():
+#     client = Client()
+#     client.run()
+#
+#
+# if __name__ == "__main__":
+#     main()
+
+
+
+
+
 import json
 import socket
 import threading
@@ -5,6 +481,8 @@ import base64
 
 import tkinter as tk
 from tkinter import scrolledtext, messagebox
+
+from tkinter import ttk
 
 from Crypto.Hash import SHA256, HMAC
 from Crypto.PublicKey import RSA
@@ -86,6 +564,17 @@ class Client:
         self.root.title("Chat")
         self.show_main_menu()
         self.root.mainloop()
+
+    # def init_gui(self):
+    #     self.root = tk.Tk()
+    #     self.root.title("P2P Chat Client")
+    #     self.root.geometry("400x700")
+    #     self.root.configure(bg="#f0f0f0")
+    #     self.style = ttk.Style()
+    #     self.style.configure("TButton", padding=6, relief="flat", background="#ccc")
+    #     self.show_main_menu()
+    #     self.root.mainloop()
+
     def show_main_menu(self):
         for widget in self.root.winfo_children():
             widget.destroy()
@@ -100,12 +589,12 @@ class Client:
         for widget in self.root.winfo_children():
             widget.destroy()
         # if (close_recipient_socket)
-            
+
         tk.Label(self.root, text=f"Welcome, {self.username}", font=("Arial", 16)).pack(pady=10)
         tk.Button(self.root, text="P2P chat", command=self.show_p2pchat).pack(pady=10)
         # tk.Button(self.root, text="Login", command=self.show_gruopchat).pack(pady=10)
 
-    
+
     def show_register(self):
         for widget in self.root.winfo_children():
             widget.destroy()
@@ -153,8 +642,8 @@ class Client:
 
         tk.Button(self.root, text="Submit", command=register_user).pack(pady=20)
         tk.Button(self.root, text="Back", command=self.show_main_menu).pack(pady=10)
-        
-     
+
+
 
     def send_message(self, message):
         self.socket.sendall(message.encode())
@@ -162,7 +651,7 @@ class Client:
     def receive_message(self):
         return self.socket.recv(1024).decode()
 
-    
+
     def show_login(self):
         for widget in self.root.winfo_children():
             widget.destroy()
@@ -188,7 +677,7 @@ class Client:
             self.username = username_entry.get()
             self.send_message(self.username)
             self.send_message(password_entry.get())
-            
+
             # Get the p2p port number which is unique
             P2P_PORT = int(self.receive_message())
             p2p_thread = threading.Thread(target=start_p2p_server, args=(self, ), daemon=True)
@@ -334,7 +823,7 @@ class Client:
             self.p2p_chat(address, int(port), group_certificate)
         else:
             print("Failed to initiate private chat:", p2p_info_confirm)
-        
+
 
     def p2p_chat(self, address, port, group_certificate=None, message=None):
         recipient_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -583,13 +1072,13 @@ def handle_p2p_client(conn, client):
                             # Decrypt the message
                             cipher_aes = AES.new(aes_key, AES.MODE_EAX, nonce=nonce)
                             decrypted_message = cipher_aes.decrypt_and_verify(ciphertext, tag)
-                            final_msg = decrypted_message.decode('utf-8') 
+                            final_msg = decrypted_message.decode('utf-8')
                             print(final_msg)  # "Received message:",
 
                             #msg history changes
                             if (client.message_display is None):
                                 client.chat_window = tk.Toplevel(client.root)
-                                client.chat_window.title("P2P Chat")      
+                                client.chat_window.title("P2P Chat")
                                 client.message_display = scrolledtext.ScrolledText(client.chat_window, wrap = tk.WORD, height = 15, width = 60)
                                 client.message_display.pack(pady=10)
                                 client.message_display.insert(tk.END, f"{sender_username}: {final_msg}")
