@@ -383,7 +383,6 @@ class Client:
                     # Receive and set the peer's public key
                     # GET THE PUBLIC KEY OF THIS USER WITH THE MEMBER TABLE IN SERVER !!!!!!!!!!!!!!!11
                     # AFTER THAT USE THAT PUBLIC KEY TO DO THE REST
-
                     peer_public_key_pem = message.split(":")[2]
                     peer_public_key = peer_public_key_pem.encode()
                     print("Received peer's public key.")
