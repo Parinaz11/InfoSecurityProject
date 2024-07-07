@@ -19,6 +19,7 @@ general_p2p_port = 12346
 num_ports = 0
 passphrase = b'123'
 
+
 class User:
     def __init__(self, email, username, password_hash, salt, public_key_pem, address=None, p2p_port=None): # , public_key, private_key
         self.email = email
@@ -172,6 +173,8 @@ class ClientHandler(threading.Thread):
         # print("SENDING USER GROUPS:", user.groups)
         self.send_message(json.dumps(user.groups))
         user_command = self.receive_message()
+        if user_command == "NotExist" or user_command == "Invalid":
+            return
 
         if user_command == "1":
             group_name = self.receive_message()
