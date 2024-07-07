@@ -90,6 +90,7 @@ class ClientHandler(threading.Thread):
             try:
                 while True:
                     command = self.receive_message()
+                    print("Command is:", command)
                     if command == "register":
                         self.handle_registration()
                     elif command == "login":
@@ -181,13 +182,16 @@ class ClientHandler(threading.Thread):
             # Send member ports of this group
             if user.access_level == 1:
                 ports = ''
+                publicKeys = ''
                 for member in group_members[group_name]:
                     print("M is", member)
                     u = self.user_manager.find_user_by_username(member[0])
                     print("ADDING PORT", u.p2p_port)
                     ports = ports + str(u.p2p_port) + ','
-                print("SENDING PORTS ", ports)
+                    publicKeys = publicKeys + str(u.p2p_port) + ':' + u.public_key.decode() + ','
+                print("SENDING PORTS ", ports[:-1])
                 self.send_message(ports[:-1])  # Not sending the last character which is a comma
+                self.send_message(publicKeys[:-1])
 
         elif user_command == "2":
             add_info = self.receive_message().split(',')
@@ -200,7 +204,7 @@ class ClientHandler(threading.Thread):
                 group_members[group_name].add((user_to_add.username, user_to_add.public_key)) # Add a set
                 print("Group members now is:", group_members[group_name])
                 print(f"Added user {user_to_add.username} to group {group_name}")
-            return
+            self.handle_private_chat_request()
 
         elif user_command == "3":
             modify_info = self.receive_message().split(',')
