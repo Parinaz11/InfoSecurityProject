@@ -15,6 +15,13 @@ PORT = 12345
 P2P_PORT = 12346
 peer_public_key = None
 
+ack_received = False
+optionA = 0
+optionB = 0
+optionC = 0
+optionD = 0
+vote_count = 0
+
 
 class Client:
     def __init__(self):
@@ -97,7 +104,7 @@ class Client:
         self.send_message(password)
         # Get the p2p port number which is unique
         P2P_PORT = int(self.receive_message())
-        p2p_thread = threading.Thread(target=start_p2p_server, daemon=True)
+        p2p_thread = threading.Thread(target=self.start_p2p_server, daemon=True)
         p2p_thread.start()
         # self.send_message(str(P2P_PORT))
         print(self.receive_message())
@@ -224,6 +231,12 @@ class Client:
             print("Failed to initiate private chat:", p2p_info_confirm)
 
     def p2p_chat(self, address, port, group_certificate=None, message=None):
+        global ack_received
+        global optionA
+        global optionB
+        global optionC
+        global optionD
+        global vote_count
         recipient_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         recipient_socket.connect((address, port))
 
@@ -256,9 +269,48 @@ class Client:
         else:
             print("Start typing your messages (type 'exit' to end chat):")
             while True:
-                message = input()
+                if ack_received:
+                    # Create the poll
+                    poll_message = 'POLL:'
+                    poll_q = input("Enter the poll question: ")
+                    poll_message += poll_q + ";"
+                    a = input("Enter option a) ")
+                    poll_message += a + ";"
+                    b = input("Enter option b) ")
+                    poll_message += b + ";"
+                    c = input("Enter option c) ")
+                    poll_message += c + ";"
+                    d = input("Enter option d) ")
+                    poll_message += d
+                    message = poll_message
+                    ack_received = False
+                else:
+                    message = input()
                 if message == "exit":
                     break
+                elif message == "Voting":
+                    message += f":{P2P_PORT}"
+                    print('Enter "show result" to share the voting results')
+                elif message == "show result":
+                    # Choose the winner
+                    winner_count = 0
+                    winner = None
+                    if optionA > winner_count:
+                        winner_count = optionA
+                        winner = "A"
+                    if optionB > winner_count:
+                        winner_count = optionB
+                        winner = "B"
+                    if optionC > winner_count:
+                        winner_count = optionC
+                        winner = "C"
+                    if optionD > winner_count:
+                        winner_count = optionD
+                        winner = "D"
+                    if winner is not None:
+                        message = "Winner:*" + winner + "* chosen with score " + str(winner_count)
+                    else:
+                        message = "Voting not done"
                 message = f"*{self.username}*: " + message
                 # Encrypt the message with AES
                 aes_key = get_random_bytes(16)
@@ -381,72 +433,120 @@ class Client:
                     else:
                         print("Received message format is incorrect.")
 
+    def handle_p2p_client(self, conn):
+        global peer_public_key
+        global ack_received
+        global optionA
+        global optionB
+        global optionC
+        global optionD
+        global vote_count
+        with conn:
+            while True:
+                data = conn.recv(1024)
+                if not data:
+                    break
 
-def start_p2p_server():
-    p2p_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    p2p_socket.bind((HOST, P2P_PORT))
-    p2p_socket.listen(1)
-    print(f"P2P server listening on port {P2P_PORT}")
-
-    while True:
-        conn, addr = p2p_socket.accept()
-        # print(f"Connected to {addr}")
-        threading.Thread(target=handle_p2p_client, args=(conn,)).start()
-
-
-def handle_p2p_client(conn):
-    global peer_public_key
-    with conn:
-        while True:
-            data = conn.recv(1024)
-            if not data:
-                break
-
-            message = data.decode()
-            if message.startswith("PUBLIC_KEY:"):
-                # Receive and set the peer's public key
-                peer_public_key_pem = message.split("PUBLIC_KEY:")[1]
-                peer_public_key = peer_public_key_pem.encode()
-                print("Received peer's public key.")
-            elif message.startswith("CERT:"):
-                print("Received certificate:", message[5:])
-            else:
-                # print("Received", message)
-                # Split the received data into components
-                parts = message.split(":")
-                if len(parts) == 7:
-                    sender_username, nonce, aes_key, ciphertext, tag, hmac_tag, signed_message = parts
-                    nonce = base64.b64decode(nonce)
-                    aes_key = base64.b64decode(aes_key)
-                    ciphertext = base64.b64decode(ciphertext)
-                    tag = base64.b64decode(tag)
-                    hmac_tag = base64.b64decode(hmac_tag)
-                    signature = base64.b64decode(signed_message)
-
-                    # Verify the message
-                    if peer_public_key:
-                        peer_rsa_key = RSA.import_key(peer_public_key)
-                        data_to_verify = nonce + aes_key + ciphertext + hmac_tag
-                        h = SHA256.new(data_to_verify)
-                        try:
-                            pkcs1_15.new(peer_rsa_key).verify(h, signature)
-                            print("Signature is valid.")
-
-                            # Verify HMAC
-                            hmac = HMAC.new(aes_key, digestmod=SHA256)
-                            hmac.update(ciphertext + tag)
-                            hmac.verify(hmac_tag)
-
-                            # Decrypt the message
-                            cipher_aes = AES.new(aes_key, AES.MODE_EAX, nonce=nonce)
-                            decrypted_message = cipher_aes.decrypt_and_verify(ciphertext, tag)
-                            print(decrypted_message.decode('utf-8'))  # "Received message:",
-                        except (ValueError, TypeError) as e:
-                            print("Signature verification failed.", str(e))
-                    else:
-                        print("Peer public key not received. Cannot verify message.")
+                message = data.decode()
+                if message.startswith("PUBLIC_KEY:"):
+                    # Receive and set the peer's public key
+                    peer_public_key_pem = message.split("PUBLIC_KEY:")[1]
+                    peer_public_key = peer_public_key_pem.encode()
+                    print("Received peer's public key.")
+                elif message.startswith("CERT:"):
+                    print("Received certificate:", message[5:])
                 else:
-                    print("Received message format is incorrect.")
+                    # print("Received", message)
+                    # Split the received data into components
+                    parts = message.split(":")
+                    if len(parts) == 7:
+                        sender_username, nonce, aes_key, ciphertext, tag, hmac_tag, signed_message = parts
+                        nonce = base64.b64decode(nonce)
+                        aes_key = base64.b64decode(aes_key)
+                        ciphertext = base64.b64decode(ciphertext)
+                        tag = base64.b64decode(tag)
+                        hmac_tag = base64.b64decode(hmac_tag)
+                        signature = base64.b64decode(signed_message)
+
+                        # Verify the message
+                        if peer_public_key:
+                            peer_rsa_key = RSA.import_key(peer_public_key)
+                            data_to_verify = nonce + aes_key + ciphertext + hmac_tag
+                            h = SHA256.new(data_to_verify)
+                            try:
+                                pkcs1_15.new(peer_rsa_key).verify(h, signature)
+                                print("Signature is valid.")
+
+                                # Verify HMAC
+                                hmac = HMAC.new(aes_key, digestmod=SHA256)
+                                hmac.update(ciphertext + tag)
+                                hmac.verify(hmac_tag)
+
+                                # Decrypt the message
+                                cipher_aes = AES.new(aes_key, AES.MODE_EAX, nonce=nonce)
+                                decrypted_message = cipher_aes.decrypt_and_verify(ciphertext, tag)
+                                received_mes = decrypted_message.decode('utf-8')
+                                print(received_mes)  # "Received message:",
+                                # Voting
+                                if received_mes.__contains__("Voting") and received_mes != "Voting ACK":
+                                    print("REC message is", received_mes)
+                                    if received_mes.split(":")[1] == " Voting":  # Received_mes format -> Voting:12348
+                                        print("Sending voting ack to port", received_mes.split(":")[2])
+                                        port_number_to_send = int(received_mes.split(":")[2])
+                                        self.p2p_chat_group('localhost', port_number_to_send, "Voting ACK")
+                                elif received_mes == "Voting ACK":
+                                    optionA = 0
+                                    optionB = 0
+                                    optionC = 0
+                                    optionD = 0
+                                    vote_count = 0
+                                    ack_received = True
+                                elif received_mes.__contains__("POLL"):  # with format *alice*:POLL:pollmessage
+                                    poll_mes = received_mes.split(":")[2]
+                                    poll_arr = poll_mes.split(";")
+                                    print("--- Voting ---")
+                                    print("Question: " + poll_arr[0])
+                                    print("A) " + poll_arr[1])
+                                    print("B) " + poll_arr[2])
+                                    print("C) " + poll_arr[3])
+                                    print("D) " + poll_arr[4])
+                                    answer = "POLL_ANSWER:"
+                                    response = None
+                                    while response != "A" or response != "C" or response != "D" or response != "B":
+                                        response = input("Choose A/B/C/D: ")
+                                    answer += response
+                                    self.p2p_chat_group('localhost', port_number_to_send, answer)
+                                elif received_mes.startswith("POLL_ANSWER:"):
+                                    vote_count += 1
+                                    vote_option = received_mes.split(":")[1]
+                                    print("VOTE OPTION:")
+                                    # ---------------------------------------------------- this part doesn't print -----------------------------------------
+                                    if vote_option == "A": optionA += 1
+                                    if vote_option == "B": optionB += 1
+                                    if vote_option == "C": optionC += 1
+                                    if vote_option == "D": optionD += 1
+
+                                elif received_mes.__contains__("Winner"):
+                                    winner_mes = received_mes.split(":")[2]
+                                    self.p2p_chat_group('localhost', port_number_to_send, winner_mes)
+
+                            except (ValueError, TypeError) as e:
+                                print("Signature verification failed.", str(e))
+                        else:
+                            print("Peer public key not received. Cannot verify message.")
+                    else:
+                        print("Received message format is incorrect.")
+
+    def start_p2p_server(self):
+        p2p_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        p2p_socket.bind((HOST, P2P_PORT))
+        p2p_socket.listen(1)
+        print(f"P2P server listening on port {P2P_PORT}")
+
+        while True:
+            conn, addr = p2p_socket.accept()
+            # print(f"Connected to {addr}")
+            threading.Thread(target=self.handle_p2p_client, args=(conn,)).start()
 
 
 def main():
