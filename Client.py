@@ -1,4 +1,3 @@
-
 import json
 import socket
 import threading
@@ -21,6 +20,8 @@ optionB = 0
 optionC = 0
 optionD = 0
 vote_count = 0
+port_number_to_send = None
+process_vote_response = False
 
 
 class Client:
@@ -33,7 +34,7 @@ class Client:
         self.key = RSA.generate(2048)
         self.public_key = self.key.publickey().export_key()
 
-        self.access_level = 0  # Access level to build a group
+        self.access_level = 1  # Access level to build a group
         self.groups_member_ports = dict()
 
     def run(self):
@@ -42,10 +43,14 @@ class Client:
                 print("1. Register")
                 print("2. Login")
                 print("3. Exit")
-                print("4. Private Chat")
-                print("5. Group Chats")
-                if self.access_level == 1:
+                if 0 <= int(self.access_level) <= 3:
+                    print("4. Private Chat")
+                if 0 <= int(self.access_level) <= 2:
+                    print("5. Group Chats")
+                if 0 <= int(self.access_level) <= 1:
                     print("6. Create Group Chat")
+                if int(self.access_level) == 0:
+                    print("7. Change Access Levels")
 
                 choice = input("Enter your choice: ")
 
@@ -56,12 +61,14 @@ class Client:
                 elif choice == "3":
                     print("Exiting...")
                     break
-                elif choice == "4":
+                elif choice == "4" and (0 <= int(self.access_level) <= 3):
                     self.private_chat()
-                elif choice == "5":
+                elif choice == "5" and (0 <= int(self.access_level) <= 2):
                     self.enter_group_chat()
-                elif choice == "6" and self.access_level == 1:
+                elif choice == "6" and (0 <= int(self.access_level) <= 1):
                     self.create_group_chat()
+                elif choice == "7" and int(self.access_level) == 0:
+                    self.change_access_levels()
                 else:
                     print("Invalid choice!")
 
@@ -74,14 +81,27 @@ class Client:
     def receive_message(self):
         return self.socket.recv(1024).decode()
 
-    def register_user(self):
-        role = input("Enter your role(admin/user): ")
-        if role == "admin":
-            self.access_level = 1
-        elif role == "user":
-            self.access_level = 0
+    def change_access_levels(self):
+        self.send_message("ChangeACL")
+        name = input("Enter the username to change access:")
+        self.send_message(name)
+        role = input("Choose the role of the user (role1/role2/role3/role4)")
+        # get the port
+        response = self.receive_message()
+        if response == "UserNotFound":
+            print("The user was not found.")
         else:
-            print("Wrong format. (admin/user)")
+            change_port = int(response)
+            to_change_mes = "CHANGE_AL:" + role[4:]
+            self.p2p_chat('localhost', change_port, None, to_change_mes)
+
+    def register_user(self):
+        role = input("Enter your role(role1/role2/role3/role4): ")
+        if role != "role1" and role != "role2" and role != "role3" and role != "role4":
+            print("Wrong format (role1/role2/role3/role4)")
+            role = "role4"
+        self.access_level = role[4:]
+        print("ROLE[4] was", self.access_level)
         self.send_message("register")
         email = input("Enter your email: ")
         self.send_message(email)
@@ -97,17 +117,21 @@ class Client:
 
     def login_user(self):
         global P2P_PORT
+
         self.send_message("login")
         self.username = input("Enter your username: ")
         self.send_message(self.username)
         password = input("Enter your password: ")
         self.send_message(password)
         # Get the p2p port number which is unique
+        response = self.receive_message()
+        print(response)
+        if response == "Login failed!":
+            return
         P2P_PORT = int(self.receive_message())
         p2p_thread = threading.Thread(target=self.start_p2p_server, daemon=True)
         p2p_thread.start()
         # self.send_message(str(P2P_PORT))
-        print(self.receive_message())
 
     def enter_group_chat(self):
         self.send_message("EnterGroups")
@@ -119,10 +143,12 @@ class Client:
             # Deserialize the JSON string to a dictionary
             groups = json.loads(groups_json)
         except (json.JSONDecodeError, KeyError):
+            self.send_message("FAILED_TO_DECODE")
             print("Failed to decode groups data")
             return
 
         if not groups:
+            self.send_message("NoGroups")
             print("No groups found")
             return
 
@@ -132,6 +158,7 @@ class Client:
         group_name = input("Enter the group name: ")
 
         if group_name not in groups:
+            self.send_message("GroupNameNotInGroups")
             print("Group does not exist")
             return
 
@@ -140,7 +167,7 @@ class Client:
 
         if access_level == 1:
             print("2. Add to group")
-            print("3. Modify user access levels")
+            # print("3. Modify user access levels")
 
         try:
             command = int(input("Enter your choice: "))
@@ -169,11 +196,11 @@ class Client:
             # Sending the certificate to the client using the private chat
             self.private_chat(groups[group_name][1], name_add)
             print(f"Added {name_add} to {group_name}")
-        elif command == 3 and access_level == 1:
-            name_modify = input("Enter a username: ")
-            level_modify = input("Enter an access level (0/1): ")
-            self.send_message(f"{name_modify},{level_modify},{group_name}")
-            print(f"User {name_modify} with access level {level_modify} for group {group_name}")
+        # elif command == 3 and access_level == 1:
+        #     name_modify = input("Enter a username: ")
+        #     level_modify = input("Enter an access level (0/1): ")
+        #     self.send_message(f"{name_modify},{level_modify},{group_name}")
+        #     print(f"User {name_modify} with access level {level_modify} for group {group_name}")
         else:
             print("Invalid command or insufficient access level")
 
@@ -216,7 +243,12 @@ class Client:
             p2p_thread.start()
 
     def private_chat(self, group_certificate=None, recipient_username=None):
+        # if group_certificate is not None and recipient_username is not None:
+        #     something
+        # else:
         self.send_message("privateChat")
+        ack_private_chat = self.receive_message()
+        print(ack_private_chat)
         if recipient_username is None:
             recipient_username = input("Enter recipient username: ")
         self.send_message(recipient_username)
@@ -237,6 +269,7 @@ class Client:
         global optionC
         global optionD
         global vote_count
+        global process_vote_response
         recipient_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         recipient_socket.connect((address, port))
 
@@ -247,29 +280,24 @@ class Client:
             message = "CERT:" + group_certificate
             recipient_socket.sendall(message.encode('utf-8'))
             print("Group certificate sent as", message)
-        if message is not None:
-            message = f"*{self.username}*: " + message
-            # Encrypt the message with AES
-            aes_key = get_random_bytes(16)
-            cipher_aes = AES.new(aes_key, AES.MODE_EAX)
-            ciphertext, tag = cipher_aes.encrypt_and_digest(message.encode('utf-8'))
 
-            # Compute HMAC
-            hmac = HMAC.new(aes_key, digestmod=SHA256)
-            hmac.update(ciphertext + tag)
-            hmac_tag = hmac.digest()
-
-            # Sign the concatenated nonce, AES key, ciphertext, and HMAC tag
-            data_to_sign = cipher_aes.nonce + aes_key + ciphertext + hmac_tag
-            h = SHA256.new(data_to_sign)
-            signature = pkcs1_15.new(self.key).sign(h)
-
-            final_message = f"{self.username}:{base64.b64encode(cipher_aes.nonce).decode()}:{base64.b64encode(aes_key).decode()}:{base64.b64encode(ciphertext).decode()}:{base64.b64encode(tag).decode()}:{base64.b64encode(hmac_tag).decode()}:{base64.b64encode(signature).decode()}"
-            recipient_socket.sendall(final_message.encode())
-        else:
+        elif message is None and group_certificate is None:
             print("Start typing your messages (type 'exit' to end chat):")
             while True:
-                if ack_received:
+                if process_vote_response:
+                    answer = "p_ANSWER:"
+                    response = "Z"
+                    while response != "A" and response != "C" and response != "D" and response != "B":
+                        response = input("Choose A/B/C/D: ")
+                    answer += response
+                    print("ANSWER =", answer)
+                    if port_number_to_send is not None:
+                        print("Sent answer", answer, "to voter")
+                        self.p2p_chat_group('localhost', port_number_to_send, answer)
+                    else:
+                        print("Port number not set")
+                    process_vote_response = False
+                elif ack_received:
                     # Create the poll
                     poll_message = 'POLL:'
                     poll_q = input("Enter the poll question: ")
@@ -311,6 +339,7 @@ class Client:
                         message = "Winner:*" + winner + "* chosen with score " + str(winner_count)
                     else:
                         message = "Voting not done"
+
                 message = f"*{self.username}*: " + message
                 # Encrypt the message with AES
                 aes_key = get_random_bytes(16)
@@ -331,6 +360,25 @@ class Client:
                 recipient_socket.sendall(final_message.encode())
 
                 print("Message sent.")
+        if message is not None:
+            message = f"*{self.username}*: " + message
+            # Encrypt the message with AES
+            aes_key = get_random_bytes(16)
+            cipher_aes = AES.new(aes_key, AES.MODE_EAX)
+            ciphertext, tag = cipher_aes.encrypt_and_digest(message.encode('utf-8'))
+
+            # Compute HMAC
+            hmac = HMAC.new(aes_key, digestmod=SHA256)
+            hmac.update(ciphertext + tag)
+            hmac_tag = hmac.digest()
+
+            # Sign the concatenated nonce, AES key, ciphertext, and HMAC tag
+            data_to_sign = cipher_aes.nonce + aes_key + ciphertext + hmac_tag
+            h = SHA256.new(data_to_sign)
+            signature = pkcs1_15.new(self.key).sign(h)
+
+            final_message = f"{self.username}:{base64.b64encode(cipher_aes.nonce).decode()}:{base64.b64encode(aes_key).decode()}:{base64.b64encode(ciphertext).decode()}:{base64.b64encode(tag).decode()}:{base64.b64encode(hmac_tag).decode()}:{base64.b64encode(signature).decode()}"
+            recipient_socket.sendall(final_message.encode())
 
         recipient_socket.close()
 
@@ -375,6 +423,7 @@ class Client:
         recipient_socket.close()
 
     def handle_group(self, conn, group_name):
+        global peer_public_key
         with conn:
             while True:
                 data = conn.recv(1024)
@@ -441,6 +490,8 @@ class Client:
         global optionC
         global optionD
         global vote_count
+        global port_number_to_send
+        global process_vote_response
         with conn:
             while True:
                 data = conn.recv(1024)
@@ -448,6 +499,7 @@ class Client:
                     break
 
                 message = data.decode()
+                print("**MESSAGE IS", message)
                 if message.startswith("PUBLIC_KEY:"):
                     # Receive and set the peer's public key
                     peer_public_key_pem = message.split("PUBLIC_KEY:")[1]
@@ -488,12 +540,17 @@ class Client:
                                 received_mes = decrypted_message.decode('utf-8')
                                 print(received_mes)  # "Received message:",
                                 # Voting
+                                print("RECIVED MES", received_mes)
                                 if received_mes.__contains__("Voting") and received_mes != "Voting ACK":
                                     print("REC message is", received_mes)
                                     if received_mes.split(":")[1] == " Voting":  # Received_mes format -> Voting:12348
                                         print("Sending voting ack to port", received_mes.split(":")[2])
                                         port_number_to_send = int(received_mes.split(":")[2])
                                         self.p2p_chat_group('localhost', port_number_to_send, "Voting ACK")
+                                elif received_mes.__contains__("CHANGE_AL"):
+                                    new_role = received_mes.split(":")[2]
+                                    print("Changing access level to", new_role)
+                                    self.access_level = new_role
                                 elif received_mes == "Voting ACK":
                                     optionA = 0
                                     optionB = 0
@@ -510,17 +567,11 @@ class Client:
                                     print("B) " + poll_arr[2])
                                     print("C) " + poll_arr[3])
                                     print("D) " + poll_arr[4])
-                                    answer = "POLL_ANSWER:"
-                                    response = None
-                                    while response != "A" or response != "C" or response != "D" or response != "B":
-                                        response = input("Choose A/B/C/D: ")
-                                    answer += response
-                                    self.p2p_chat_group('localhost', port_number_to_send, answer)
-                                elif received_mes.startswith("POLL_ANSWER:"):
+                                    process_vote_response = True
+                                elif received_mes.startswith("p_ANSWER:"):
                                     vote_count += 1
                                     vote_option = received_mes.split(":")[1]
                                     print("VOTE OPTION:")
-                                    # ---------------------------------------------------- this part doesn't print -----------------------------------------
                                     if vote_option == "A": optionA += 1
                                     if vote_option == "B": optionB += 1
                                     if vote_option == "C": optionC += 1

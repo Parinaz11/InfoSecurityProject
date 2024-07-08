@@ -1,6 +1,5 @@
 # Just self.access_level set to default 0 and doesn't set the role in register (no more changes from the client)
 
-
 import json
 import socket
 import threading
@@ -104,6 +103,7 @@ class Client:
         #     print("Wrong format (role1/role2/role3/role4)")
         #     role = "role4"
         # self.access_level = role[4:]
+        # print("ROLE[4] was", self.access_level)
         self.send_message("register")
         email = input("Enter your email: ")
         self.send_message(email)
@@ -341,10 +341,6 @@ class Client:
                         message = "Winner:*" + winner + "* chosen with score " + str(winner_count)
                     else:
                         message = "Voting not done"
-                elif message.startswith("CHANGE_AL:"):
-                    new_role = message.split(":")[1]
-                    print("Changing access level to", new_role)
-                    self.access_level = new_role
 
                 message = f"*{self.username}*: " + message
                 # Encrypt the message with AES
@@ -505,7 +501,7 @@ class Client:
                     break
 
                 message = data.decode()
-                print("**MESSAGE IS", message)
+                # print("**MESSAGE IS", message)
                 if message.startswith("PUBLIC_KEY:"):
                     # Receive and set the peer's public key
                     peer_public_key_pem = message.split("PUBLIC_KEY:")[1]
@@ -513,6 +509,10 @@ class Client:
                     print("Received peer's public key.")
                 elif message.startswith("CERT:"):
                     print("Received certificate:", message[5:])
+                # elif message.__contains__("CHANGE_AL"):
+                #     new_role = message.split(":")[2]
+                #     print("Changing access level to", new_role)
+                #     self.access_level = new_role
                 else:
                     # print("Received", message)
                     # Split the received data into components
@@ -546,7 +546,7 @@ class Client:
                                 received_mes = decrypted_message.decode('utf-8')
                                 print(received_mes)  # "Received message:",
                                 # Voting
-                                print("RECIVED MES", received_mes)
+                                # print("RECIVED MES", received_mes)
                                 if received_mes.__contains__("Voting") and received_mes != "Voting ACK":
                                     print("REC message is", received_mes)
                                     if received_mes.split(":")[1] == " Voting":  # Received_mes format -> Voting:12348
@@ -609,3 +609,404 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+# import json
+# import socket
+# import threading
+# import base64
+#
+# from Crypto.Hash import SHA256, HMAC
+# from Crypto.PublicKey import RSA
+# from Crypto.Cipher import PKCS1_OAEP, AES
+# from Crypto.Random import get_random_bytes
+# from Crypto.Signature import pkcs1_15
+#
+# HOST = 'localhost'
+# PORT = 12345
+# P2P_PORT = 12346
+# peer_public_key = None
+#
+#
+# class Client:
+#     def __init__(self):
+#         global peer_public_key
+#         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+#         self.socket.connect((HOST, PORT))
+#         self.username = None
+#         self.key = RSA.generate(2048)
+#         self.public_key = self.key.publickey().export_key()
+#         self.access_level = 0  # Access level to build a group
+#         self.groups_member_ports = dict()
+#
+#     def run(self):
+#         try:
+#             while True:
+#                 print("1. Register")
+#                 print("2. Login")
+#                 print("3. Exit")
+#                 print("4. Private Chat")
+#                 print("5. Group Chats")
+#                 if self.access_level == 1:
+#                     print("6. Create Group Chat")
+#
+#                 choice = input("Enter your choice: ")
+#
+#                 if choice == "1":
+#                     self.register_user()
+#                 elif choice == "2":
+#                     self.login_user()
+#                 elif choice == "3":
+#                     print("Exiting...")
+#                     break
+#                 elif choice == "4":
+#                     self.private_chat()
+#                 elif choice == "5":
+#                     self.enter_group_chat()
+#                 elif choice == "6" and self.access_level == 1:
+#                     self.create_group_chat()
+#                 else:
+#                     print("Invalid choice!")
+#
+#         except Exception as e:
+#             print("Client exception:", str(e))
+#
+#     def send_message(self, message):
+#         self.socket.sendall(message.encode())
+#
+#     def receive_message(self):
+#         return self.socket.recv(1024).decode()
+#
+#     def register_user(self):
+#         role = input("Enter your role(admin/user): ")
+#         if role == "admin":
+#             self.access_level = 1
+#         elif role == "user":
+#             self.access_level = 0
+#         else:
+#             print("Wrong format. (admin/user)")
+#         self.send_message("register")
+#         email = input("Enter your email: ")
+#         self.send_message(email)
+#         username = input("Enter your username: ")
+#         self.send_message(username)
+#         password = input("Enter your password: ")
+#         self.send_message(password)
+#         confirm_password = input("Confirm your password: ")
+#         self.send_message(confirm_password)
+#         self.send_message(self.public_key.decode())
+#         print(self.receive_message())
+#
+#     def login_user(self):
+#         global P2P_PORT
+#         self.send_message("login")
+#         self.username = input("Enter your username: ")
+#         self.send_message(self.username)
+#         password = input("Enter your password: ")
+#         self.send_message(password)
+#         P2P_PORT = int(self.receive_message())
+#         p2p_thread = threading.Thread(target=start_p2p_server, daemon=True)
+#         p2p_thread.start()
+#         print(self.receive_message())
+#
+#     def enter_group_chat(self):
+#         self.send_message("EnterGroups")
+#         print("--- Your Groups ---")
+#         self.send_message(self.username)
+#         try:
+#             groups_json = self.socket.recv(4096).decode('utf-8')
+#             groups = json.loads(groups_json)
+#         except (json.JSONDecodeError, KeyError):
+#             print("Failed to decode groups data")
+#             return
+#
+#         if not groups:
+#             print("No groups found")
+#             return
+#
+#         for group, details in groups.items():
+#             print(f'{group} (access level {details[0]})')
+#
+#         group_name = input("Enter the group name: ")
+#
+#         if group_name not in groups:
+#             print("Group does not exist")
+#             return
+#
+#         print("1. Enter group")
+#         access_level = groups[group_name][0]
+#
+#         if access_level == 1:
+#             print("2. Add to group")
+#             print("3. Modify user access levels")
+#
+#         try:
+#             command = int(input("Enter your choice: "))
+#         except ValueError:
+#             print("Invalid input")
+#             return
+#
+#         self.send_message(str(command))
+#
+#         if command == 1:
+#             print(f"Entered group {group_name}")
+#             self.send_message(group_name)
+#             group_port = int(self.receive_message())
+#             print("Received group port", group_port)
+#             address = 'localhost'
+#             if access_level == 1:
+#                 member_ports_str = self.receive_message()
+#                 self.groups_member_ports[group_name] = set(map(int, member_ports_str.split(",")))
+#                 print("Member Ports:", self.groups_member_ports[group_name])
+#             self.p2p_chat(address, group_port)
+#         elif command == 2 and access_level == 1:
+#             name_add = input("Enter a username: ")
+#             self.send_message(f"{name_add},{group_name}")
+#             self.private_chat(groups[group_name][1], name_add)
+#             print(f"Added {name_add} to {group_name}")
+#         elif command == 3 and access_level == 1:
+#             name_modify = input("Enter a username: ")
+#             level_modify = input("Enter an access level (0/1): ")
+#             self.send_message(f"{name_modify},{level_modify},{group_name}")
+#             response = self.receive_message()
+#             print(f"Server response: {response}")
+#             if response == "Success":
+#                 print(f"User {name_modify} access level changed to {level_modify} in group {group_name}")
+#             else:
+#                 print(f"Failed to change access level for {name_modify}")
+#         else:
+#             print("Invalid command or insufficient access level")
+#
+#     def create_group_chat(self):
+#         self.send_message("CreatingGroupChat")
+#         self.send_message(f"PUBLIC_KEY:{self.public_key.decode()}")
+#         group_name = input("Enter group name: ")
+#
+#         message = self.username + ',' + group_name
+#         aes_key = get_random_bytes(16)
+#         cipher_aes = AES.new(aes_key, AES.MODE_EAX)
+#         ciphertext, tag = cipher_aes.encrypt_and_digest(message.encode('utf-8'))
+#         hmac = HMAC.new(aes_key, digestmod=SHA256)
+#         hmac.update(ciphertext + tag)
+#         hmac_tag = hmac.digest()
+#         data_to_sign = cipher_aes.nonce + aes_key + ciphertext + hmac_tag
+#         h = SHA256.new(data_to_sign)
+#         signature = pkcs1_15.new(self.key).sign(h)
+#         final_message = f"{self.username}:{base64.b64encode(cipher_aes.nonce).decode()}:{base64.b64encode(aes_key).decode()}:{base64.b64encode(ciphertext).decode()}:{base64.b64encode(tag).decode()}:{base64.b64encode(hmac_tag).decode()}:{base64.b64encode(signature).decode()}"
+#         self.send_message(final_message)
+#
+#         received = self.receive_message()
+#         if received == "Not allowed":
+#             print("You are not allowed to create a group!")
+#         elif received == "exists":
+#             print("Group name already taken. Please choose another.")
+#         else:
+#             group_port = int(received)
+#             print("Group port received:", group_port)
+#             p2p_thread = threading.Thread(target=self.start_group_server, args=(group_port, group_name), daemon=True)
+#             p2p_thread.start()
+#
+#     def private_chat(self, group_certificate=None, recipient_username=None):
+#         self.send_message("privateChat")
+#         if recipient_username is None:
+#             recipient_username = input("Enter recipient username: ")
+#         self.send_message(recipient_username)
+#
+#         p2p_info_confirm = self.receive_message()
+#         if p2p_info_confirm.startswith("P2P_INFO"):
+#             p2p_info = self.receive_message()
+#             print('P2P info', p2p_info)
+#             address, port = p2p_info.split(":")
+#             self.p2p_chat(address, int(port), group_certificate)
+#         else:
+#             print("Failed to initiate private chat:", p2p_info_confirm)
+#
+#     def p2p_chat(self, address, port, group_certificate=None, message=None):
+#         recipient_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+#         recipient_socket.connect((address, port))
+#         recipient_socket.sendall(f"PUBLIC_KEY:{self.public_key.decode()}".encode())
+#
+#         if group_certificate is not None:
+#             message = "CERT:" + group_certificate
+#             recipient_socket.sendall(message.encode('utf-8'))
+#             print("Group certificate sent as", message)
+#         if message is not None:
+#             message = f"*{self.username}*: " + message
+#             aes_key = get_random_bytes(16)
+#             cipher_aes = AES.new(aes_key, AES.MODE_EAX)
+#             ciphertext, tag = cipher_aes.encrypt_and_digest(message.encode('utf-8'))
+#             hmac = HMAC.new(aes_key, digestmod=SHA256)
+#             hmac.update(ciphertext + tag)
+#             hmac_tag = hmac.digest()
+#             data_to_sign = cipher_aes.nonce + aes_key + ciphertext + hmac_tag
+#             h = SHA256.new(data_to_sign)
+#             signature = pkcs1_15.new(self.key).sign(h)
+#             final_message = f"{self.username}:{base64.b64encode(cipher_aes.nonce).decode()}:{base64.b64encode(aes_key).decode()}:{base64.b64encode(ciphertext).decode()}:{base64.b64encode(tag).decode()}:{base64.b64encode(hmac_tag).decode()}:{base64.b64encode(signature).decode()}"
+#             recipient_socket.sendall(final_message.encode())
+#         else:
+#             print("Start typing your messages (type 'exit' to end chat):")
+#             while True:
+#                 message = input()
+#                 if message == "exit":
+#                     break
+#                 message = f"*{self.username}*: " + message
+#                 aes_key = get_random_bytes(16)
+#                 cipher_aes = AES.new(aes_key, AES.MODE_EAX)
+#                 ciphertext, tag = cipher_aes.encrypt_and_digest(message.encode('utf-8'))
+#                 hmac = HMAC.new(aes_key, digestmod=SHA256)
+#                 hmac.update(ciphertext + tag)
+#                 hmac_tag = hmac.digest()
+#                 data_to_sign = cipher_aes.nonce + aes_key + ciphertext + hmac_tag
+#                 h = SHA256.new(data_to_sign)
+#                 signature = pkcs1_15.new(self.key).sign(h)
+#                 final_message = f"{self.username}:{base64.b64encode(cipher_aes.nonce).decode()}:{base64.b64encode(aes_key).decode()}:{base64.b64encode(ciphertext).decode()}:{base64.b64encode(tag).decode()}:{base64.b64encode(hmac_tag).decode()}:{base64.b64encode(signature).decode()}"
+#                 recipient_socket.sendall(final_message.encode())
+#                 print("Message sent.")
+#
+#         recipient_socket.close()
+#
+#     def start_group_server(self, group_port, group_name):
+#         group_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+#         group_socket.bind((HOST, group_port))
+#         group_socket.listen(1)
+#         print(f"Group server listening on port {group_port}")
+#         self.groups_member_ports[group_name] = set()
+#
+#         while True:
+#             conn, addr = group_socket.accept()
+#             threading.Thread(target=self.handle_group, args=(conn, group_name,)).start()
+#
+#     def p2p_chat_group(self, address, port, message):
+#         recipient_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+#         recipient_socket.connect((address, port))
+#         recipient_socket.sendall(f"PUBLIC_KEY:{self.public_key.decode()}".encode())
+#
+#         if message is not None:
+#             aes_key = get_random_bytes(16)
+#             cipher_aes = AES.new(aes_key, AES.MODE_EAX)
+#             ciphertext, tag = cipher_aes.encrypt_and_digest(message.encode('utf-8'))
+#             hmac = HMAC.new(aes_key, digestmod=SHA256)
+#             hmac.update(ciphertext + tag)
+#             hmac_tag = hmac.digest()
+#             data_to_sign = cipher_aes.nonce + aes_key + ciphertext + hmac_tag
+#             h = SHA256.new(data_to_sign)
+#             signature = pkcs1_15.new(self.key).sign(h)
+#             final_message = f"{self.username}:{base64.b64encode(cipher_aes.nonce).decode()}:{base64.b64encode(aes_key).decode()}:{base64.b64encode(ciphertext).decode()}:{base64.b64encode(tag).decode()}:{base64.b64encode(hmac_tag).decode()}:{base64.b64encode(signature).decode()}"
+#             recipient_socket.sendall(final_message.encode())
+#
+#         recipient_socket.close()
+#
+#     def handle_group(self, conn, group_name):
+#         global peer_public_key
+#         with conn:
+#             while True:
+#                 data = conn.recv(1024)
+#                 if not data:
+#                     break
+#                 message = data.decode()
+#                 if message.startswith("PUBLIC_KEY:"):
+#                     peer_public_key_pem = message.split("PUBLIC_KEY:")[1]
+#                     peer_public_key = peer_public_key_pem.encode()
+#                     print("Received peer's public key.")
+#                 else:
+#                     parts = message.split(":")
+#                     if len(parts) == 7:
+#                         sender_username, nonce, aes_key, ciphertext, tag, hmac_tag, signed_message = parts
+#                         nonce = base64.b64decode(nonce)
+#                         aes_key = base64.b64decode(aes_key)
+#                         ciphertext = base64.b64decode(ciphertext)
+#                         tag = base64.b64decode(tag)
+#                         hmac_tag = base64.b64decode(hmac_tag)
+#                         signature = base64.b64decode(signed_message)
+#                         if peer_public_key:
+#                             peer_rsa_key = RSA.import_key(peer_public_key)
+#                             data_to_verify = nonce + aes_key + ciphertext + hmac_tag
+#                             h = SHA256.new(data_to_verify)
+#                             try:
+#                                 pkcs1_15.new(peer_rsa_key).verify(h, signature)
+#                                 hmac = HMAC.new(aes_key, digestmod=SHA256)
+#                                 hmac.update(ciphertext + tag)
+#                                 hmac.verify(hmac_tag)
+#                                 cipher_aes = AES.new(aes_key, AES.MODE_EAX, nonce=nonce)
+#                                 decrypted_message = cipher_aes.decrypt_and_verify(ciphertext, tag)
+#                                 final_message = decrypted_message.decode('utf-8')
+#                                 print(final_message)
+#                                 member_ports = self.groups_member_ports[group_name]
+#                                 if member_ports:
+#                                     for mp in member_ports:
+#                                         if mp != P2P_PORT:
+#                                             self.p2p_chat_group('localhost', mp, final_message)
+#                             except (ValueError, TypeError) as e:
+#                                 print("Signature verification failed.", str(e))
+#                         else:
+#                             print("Peer public key not received. Cannot verify message.")
+#                     else:
+#                         print("Received message format is incorrect.")
+#
+#
+# def start_p2p_server():
+#     p2p_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+#     p2p_socket.bind((HOST, P2P_PORT))
+#     p2p_socket.listen(1)
+#     print(f"P2P server listening on port {P2P_PORT}")
+#
+#     while True:
+#         conn, addr = p2p_socket.accept()
+#         threading.Thread(target=handle_p2p_client, args=(conn,)).start()
+#
+#
+# def handle_p2p_client(conn):
+#     global peer_public_key
+#     with conn:
+#         while True:
+#             data = conn.recv(1024)
+#             if not data:
+#                 break
+#
+#             message = data.decode()
+#             if message.startswith("PUBLIC_KEY:"):
+#                 peer_public_key_pem = message.split("PUBLIC_KEY:")[1]
+#                 peer_public_key = peer_public_key_pem.encode()
+#                 print("Received peer's public key.")
+#             elif message.startswith("CERT:"):
+#                 print("Received certificate:", message[5:])
+#             else:
+#                 parts = message.split(":")
+#                 if len(parts) == 7:
+#                     sender_username, nonce, aes_key, ciphertext, tag, hmac_tag, signed_message = parts
+#                     nonce = base64.b64decode(nonce)
+#                     aes_key = base64.b64decode(aes_key)
+#                     ciphertext = base64.b64decode(ciphertext)
+#                     tag = base64.b64decode(tag)
+#                     hmac_tag = base64.b64decode(hmac_tag)
+#                     signature = base64.b64decode(signed_message)
+#                     if peer_public_key:
+#                         peer_rsa_key = RSA.import_key(peer_public_key)
+#                         data_to_verify = nonce + aes_key + ciphertext + hmac_tag
+#                         h = SHA256.new(data_to_verify)
+#                         try:
+#                             pkcs1_15.new(peer_rsa_key).verify(h, signature)
+#                             print("Signature is valid.")
+#                             hmac = HMAC.new(aes_key, digestmod=SHA256)
+#                             hmac.update(ciphertext + tag)
+#                             hmac.verify(hmac_tag)
+#                             cipher_aes = AES.new(aes_key, AES.MODE_EAX, nonce=nonce)
+#                             decrypted_message = cipher_aes.decrypt_and_verify(ciphertext, tag)
+#                             print(decrypted_message.decode('utf-8'))
+#                         except (ValueError, TypeError) as e:
+#                             print("Signature verification failed.", str(e))
+#                     else:
+#                         print("Peer public key not received. Cannot verify message.")
+#                 else:
+#                     print("Received message format is incorrect.")
+#
+#
+# def main():
+#     client = Client()
+#     client.run()
+#
+#
+# if __name__ == "__main__":
+#     main()
+
