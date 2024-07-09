@@ -87,7 +87,7 @@ class Client:
         self.send_message("ChangeACL")
         name = input("Enter the username to change access:")
         self.send_message(name)
-        role = input("Choose the role of the user (role1/role2/role3/role4)")
+        role = input("Choose the role of the user (role0/role1)")
         # get the port
         response = self.receive_message()
         if response == "UserNotFound":
